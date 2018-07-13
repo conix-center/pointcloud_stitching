@@ -1,0 +1,1 @@
+/usr/bin/c++   -std=c++11 -w -pthread  -Wno-deprecated    -rdynamic CMakeFiles/pcs-mqtt-publisher.dir/pcs-mqtt-publisher.cpp.o  -o pcs-mqtt-publisher -lpaho-mqttpp3 -lpaho-mqtt3a 

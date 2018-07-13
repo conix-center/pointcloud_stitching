@@ -1,0 +1,5 @@
+/usr/local/bin/pcs-camera-server
+/usr/local/bin/pcs-camera-client
+/usr/local/bin/pcs-multicamera-client
+/usr/local/bin/pcs-mqtt-subscriber
+/usr/local/bin/pcs-mqtt-publisher

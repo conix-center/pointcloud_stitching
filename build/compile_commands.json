@@ -1,0 +1,27 @@
+[
+{
+  "directory": "/home/wiselab/Pointcloud-stitching/build",
+  "command": "/usr/bin/c++  -DDISABLE_LIBUSB_1_0 -DDISABLE_PCAP -DDISABLE_PNG -Dqh_QHpointer -I/usr/include/vtk-5.10 -I/usr/include/pcl-1.8 -I/usr/include/eigen3   -std=c++11 -w -pthread  -Wno-deprecated    -march=native -msse4.2 -mfpmath=sse  -o CMakeFiles/pcs-mqtt-subscriber.dir/pcs-mqtt-subscriber.cpp.o -c /home/wiselab/Pointcloud-stitching/pcs-mqtt-subscriber.cpp",
+  "file": "/home/wiselab/Pointcloud-stitching/pcs-mqtt-subscriber.cpp"
+},
+{
+  "directory": "/home/wiselab/Pointcloud-stitching/build",
+  "command": "/usr/bin/c++  -DDISABLE_LIBUSB_1_0 -DDISABLE_PCAP -DDISABLE_PNG -Dqh_QHpointer -I/usr/include/vtk-5.10 -I/usr/include/pcl-1.8 -I/usr/include/eigen3   -std=c++11 -w -pthread  -Wno-deprecated    -march=native -msse4.2 -mfpmath=sse  -o CMakeFiles/pcs-multicamera-client.dir/pcs-multicamera-client.cpp.o -c /home/wiselab/Pointcloud-stitching/pcs-multicamera-client.cpp",
+  "file": "/home/wiselab/Pointcloud-stitching/pcs-multicamera-client.cpp"
+},
+{
+  "directory": "/home/wiselab/Pointcloud-stitching/build",
+  "command": "/usr/bin/c++  -DDISABLE_LIBUSB_1_0 -DDISABLE_PCAP -DDISABLE_PNG -Dqh_QHpointer -I/usr/include/vtk-5.10 -I/usr/include/pcl-1.8 -I/usr/include/eigen3   -std=c++11 -w -pthread  -Wno-deprecated    -march=native -msse4.2 -mfpmath=sse  -o CMakeFiles/pcs-camera-server.dir/pcs-camera-server.cpp.o -c /home/wiselab/Pointcloud-stitching/pcs-camera-server.cpp",
+  "file": "/home/wiselab/Pointcloud-stitching/pcs-camera-server.cpp"
+},
+{
+  "directory": "/home/wiselab/Pointcloud-stitching/build",
+  "command": "/usr/bin/c++  -DDISABLE_LIBUSB_1_0 -DDISABLE_PCAP -DDISABLE_PNG -Dqh_QHpointer -I/usr/include/vtk-5.10 -I/usr/include/pcl-1.8 -I/usr/include/eigen3   -std=c++11 -w -pthread  -Wno-deprecated    -march=native -msse4.2 -mfpmath=sse  -o CMakeFiles/pcs-mqtt-publisher.dir/pcs-mqtt-publisher.cpp.o -c /home/wiselab/Pointcloud-stitching/pcs-mqtt-publisher.cpp",
+  "file": "/home/wiselab/Pointcloud-stitching/pcs-mqtt-publisher.cpp"
+},
+{
+  "directory": "/home/wiselab/Pointcloud-stitching/build",
+  "command": "/usr/bin/c++  -DDISABLE_LIBUSB_1_0 -DDISABLE_PCAP -DDISABLE_PNG -Dqh_QHpointer -I/usr/include/vtk-5.10 -I/usr/include/pcl-1.8 -I/usr/include/eigen3   -std=c++11 -w -pthread  -Wno-deprecated    -march=native -msse4.2 -mfpmath=sse  -o CMakeFiles/pcs-camera-client.dir/pcs-camera-client.cpp.o -c /home/wiselab/Pointcloud-stitching/pcs-camera-client.cpp",
+  "file": "/home/wiselab/Pointcloud-stitching/pcs-camera-client.cpp"
+}
+]

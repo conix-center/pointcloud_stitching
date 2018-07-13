@@ -1,0 +1,110 @@
+Determining if the pthread_create exist failed with the following output:
+Change Dir: /home/wiselab/pointcloud-stitching/build/CMakeFiles/CMakeTmp
+
+Run Build Command:"/usr/bin/make" "cmTC_ab7ed/fast"
+/usr/bin/make -f CMakeFiles/cmTC_ab7ed.dir/build.make CMakeFiles/cmTC_ab7ed.dir/build
+make[1]: Entering directory '/home/wiselab/pointcloud-stitching/build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_ab7ed.dir/CheckSymbolExists.c.o
+/usr/bin/cc   -std=c11    -o CMakeFiles/cmTC_ab7ed.dir/CheckSymbolExists.c.o   -c /home/wiselab/pointcloud-stitching/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c
+Linking C executable cmTC_ab7ed
+/usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_ab7ed.dir/link.txt --verbose=1
+/usr/bin/cc  -std=c11     -rdynamic CMakeFiles/cmTC_ab7ed.dir/CheckSymbolExists.c.o  -o cmTC_ab7ed 
+CMakeFiles/cmTC_ab7ed.dir/CheckSymbolExists.c.o: In function `main':
+CheckSymbolExists.c:(.text+0xa): undefined reference to `pthread_create'
+collect2: error: ld returned 1 exit status
+CMakeFiles/cmTC_ab7ed.dir/build.make:86: recipe for target 'cmTC_ab7ed' failed
+make[1]: *** [cmTC_ab7ed] Error 1
+make[1]: Leaving directory '/home/wiselab/pointcloud-stitching/build/CMakeFiles/CMakeTmp'
+Makefile:121: recipe for target 'cmTC_ab7ed/fast' failed
+make: *** [cmTC_ab7ed/fast] Error 2
+
+File /home/wiselab/pointcloud-stitching/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
+/* */
+#include <pthread.h>
+
+int main(int argc, char** argv)
+{
+  (void)argv;
+#ifndef pthread_create
+  return ((int*)(&pthread_create))[argc];
+#else
+  (void)argc;
+  return 0;
+#endif
+}
+
+Determining if the function pthread_create exists in the pthreads failed with the following output:
+Change Dir: /home/wiselab/pointcloud-stitching/build/CMakeFiles/CMakeTmp
+
+Run Build Command:"/usr/bin/make" "cmTC_a4b89/fast"
+/usr/bin/make -f CMakeFiles/cmTC_a4b89.dir/build.make CMakeFiles/cmTC_a4b89.dir/build
+make[1]: Entering directory '/home/wiselab/pointcloud-stitching/build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_a4b89.dir/CheckFunctionExists.c.o
+/usr/bin/cc   -std=c11 -DCHECK_FUNCTION_EXISTS=pthread_create   -o CMakeFiles/cmTC_a4b89.dir/CheckFunctionExists.c.o   -c /usr/local/share/cmake-3.12/Modules/CheckFunctionExists.c
+Linking C executable cmTC_a4b89
+/usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_a4b89.dir/link.txt --verbose=1
+/usr/bin/cc  -std=c11 -DCHECK_FUNCTION_EXISTS=pthread_create    -rdynamic CMakeFiles/cmTC_a4b89.dir/CheckFunctionExists.c.o  -o cmTC_a4b89 -lpthreads 
+/usr/bin/ld: cannot find -lpthreads
+collect2: error: ld returned 1 exit status
+CMakeFiles/cmTC_a4b89.dir/build.make:86: recipe for target 'cmTC_a4b89' failed
+make[1]: *** [cmTC_a4b89] Error 1
+make[1]: Leaving directory '/home/wiselab/pointcloud-stitching/build/CMakeFiles/CMakeTmp'
+Makefile:121: recipe for target 'cmTC_a4b89/fast' failed
+make: *** [cmTC_a4b89/fast] Error 2
+
+
+Determining if the pthread_create exist failed with the following output:
+Change Dir: /home/wiselab/Pointcloud-stitching/build/CMakeFiles/CMakeTmp
+
+Run Build Command:"/usr/bin/make" "cmTC_5e11f/fast"
+/usr/bin/make -f CMakeFiles/cmTC_5e11f.dir/build.make CMakeFiles/cmTC_5e11f.dir/build
+make[1]: Entering directory '/home/wiselab/Pointcloud-stitching/build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_5e11f.dir/CheckSymbolExists.c.o
+/usr/bin/cc   -std=c11    -o CMakeFiles/cmTC_5e11f.dir/CheckSymbolExists.c.o   -c /home/wiselab/Pointcloud-stitching/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c
+Linking C executable cmTC_5e11f
+/usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_5e11f.dir/link.txt --verbose=1
+/usr/bin/cc  -std=c11     -rdynamic CMakeFiles/cmTC_5e11f.dir/CheckSymbolExists.c.o  -o cmTC_5e11f 
+CMakeFiles/cmTC_5e11f.dir/CheckSymbolExists.c.o: In function `main':
+CheckSymbolExists.c:(.text+0xa): undefined reference to `pthread_create'
+collect2: error: ld returned 1 exit status
+CMakeFiles/cmTC_5e11f.dir/build.make:86: recipe for target 'cmTC_5e11f' failed
+make[1]: *** [cmTC_5e11f] Error 1
+make[1]: Leaving directory '/home/wiselab/Pointcloud-stitching/build/CMakeFiles/CMakeTmp'
+Makefile:121: recipe for target 'cmTC_5e11f/fast' failed
+make: *** [cmTC_5e11f/fast] Error 2
+
+File /home/wiselab/Pointcloud-stitching/build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
+/* */
+#include <pthread.h>
+
+int main(int argc, char** argv)
+{
+  (void)argv;
+#ifndef pthread_create
+  return ((int*)(&pthread_create))[argc];
+#else
+  (void)argc;
+  return 0;
+#endif
+}
+
+Determining if the function pthread_create exists in the pthreads failed with the following output:
+Change Dir: /home/wiselab/Pointcloud-stitching/build/CMakeFiles/CMakeTmp
+
+Run Build Command:"/usr/bin/make" "cmTC_94ab5/fast"
+/usr/bin/make -f CMakeFiles/cmTC_94ab5.dir/build.make CMakeFiles/cmTC_94ab5.dir/build
+make[1]: Entering directory '/home/wiselab/Pointcloud-stitching/build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_94ab5.dir/CheckFunctionExists.c.o
+/usr/bin/cc   -std=c11 -DCHECK_FUNCTION_EXISTS=pthread_create   -o CMakeFiles/cmTC_94ab5.dir/CheckFunctionExists.c.o   -c /usr/local/share/cmake-3.12/Modules/CheckFunctionExists.c
+Linking C executable cmTC_94ab5
+/usr/local/bin/cmake -E cmake_link_script CMakeFiles/cmTC_94ab5.dir/link.txt --verbose=1
+/usr/bin/cc  -std=c11 -DCHECK_FUNCTION_EXISTS=pthread_create    -rdynamic CMakeFiles/cmTC_94ab5.dir/CheckFunctionExists.c.o  -o cmTC_94ab5 -lpthreads 
+/usr/bin/ld: cannot find -lpthreads
+collect2: error: ld returned 1 exit status
+CMakeFiles/cmTC_94ab5.dir/build.make:86: recipe for target 'cmTC_94ab5' failed
+make[1]: *** [cmTC_94ab5] Error 1
+make[1]: Leaving directory '/home/wiselab/Pointcloud-stitching/build/CMakeFiles/CMakeTmp'
+Makefile:121: recipe for target 'cmTC_94ab5/fast' failed
+make: *** [cmTC_94ab5/fast] Error 2
+
+

@@ -1,0 +1,1 @@
+/usr/bin/c++   -std=c++11 -w -pthread  -Wno-deprecated    -rdynamic CMakeFiles/pcs-mqtt-subscriber.dir/pcs-mqtt-subscriber.cpp.o  -o pcs-mqtt-subscriber -lpaho-mqttpp3 -lpaho-mqtt3a 
