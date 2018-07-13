@@ -6,6 +6,8 @@ project(Point_Cloud_Stitching)
 # Save the command line compile commands in the build output
 set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
 
+option(BUILD_CLIENT "Build the central computing client" OFF)
+
 include(CheckCXXCompilerFlag)
 CHECK_CXX_COMPILER_FLAG("-std=c++11" COMPILER_SUPPORTS_CXX11)
 CHECK_CXX_COMPILER_FLAG("-std=c++0x" COMPILER_SUPPORTS_CXX0X)
@@ -16,39 +18,47 @@ elseif(COMPILER_SUPPORTS_CXX0X)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++0x -w -pthread")
 endif()
 
-find_package(PCL REQUIRED)
-include_directories(${PCL_INCLUDE_DIRS})
-link_directories(${PCL_LIBRARY_DIRS})
-add_definitions(${PCL_DEFINITIONS})
-
-set(RS2_DEPENDENCIES realsense2 ${OPENGL_LIBRARIES})
 set(MQTT_DEPENDENCIES paho-mqttpp3 paho-mqtt3a)
 
-add_executable(pcs-camera-server pcs-camera-server.cpp)
-target_link_libraries(pcs-camera-server ${RS2_DEPENDENCIES})
+if (BUILD_CLIENT)
+    find_package(PCL REQUIRED)
+    include_directories(${PCL_INCLUDE_DIRS})
+    link_directories(${PCL_LIBRARY_DIRS})
+    add_definitions(${PCL_DEFINITIONS})
 
-add_executable(pcs-camera-client pcs-camera-client.cpp)
-target_link_libraries(pcs-camera-client ${RS2_DEPENDENCIES} ${PCL_LIBRARIES})
+    add_executable(pcs-multicamera-client pcs-multicamera-client.cpp)
+    target_link_libraries(pcs-multicamera-client ${RS2_DEPENDENCIES} ${PCL_LIBRARIES})
 
-add_executable(pcs-multicamera-client pcs-multicamera-client.cpp)
-target_link_libraries(pcs-multicamera-client ${RS2_DEPENDENCIES} ${PCL_LIBRARIES})
+    add_executable(pcs-mqtt-subscriber pcs-mqtt-subscriber.cpp)
+    target_link_libraries(pcs-mqtt-subscriber ${MQTT_DEPENDENCIES})
 
-add_executable(pcs-mqtt-subscriber pcs-mqtt-subscriber.cpp)
-target_link_libraries(pcs-mqtt-subscriber ${MQTT_DEPENDENCIES})
-    
-add_executable(pcs-mqtt-publisher pcs-mqtt-publisher.cpp)
-target_link_libraries(pcs-mqtt-publisher ${MQTT_DEPENDENCIES})
+    install(
+        TARGETS
 
-install(
-    TARGETS
+        pcs-multicamera-client
+        pcs-mqtt-subscriber
 
-    pcs-camera-server
-    pcs-camera-client
-    pcs-multicamera-client
-    pcs-mqtt-subscriber
-    pcs-mqtt-publisher
+        RUNTIME DESTINATION
+        ${CMAKE_INSTALL_PREFIX}/bin
+    )
+else()
+    set(RS2_DEPENDENCIES realsense2 ${OPENGL_LIBRARIES})
 
-    RUNTIME DESTINATION
-    ${CMAKE_INSTALL_PREFIX}/bin
-)
+    add_executable(pcs-camera-server pcs-camera-server.cpp)
+    target_link_libraries(pcs-camera-server ${RS2_DEPENDENCIES})
+        
+    add_executable(pcs-mqtt-publisher pcs-mqtt-publisher.cpp)
+    target_link_libraries(pcs-mqtt-publisher ${MQTT_DEPENDENCIES})
+
+    install(
+        TARGETS
+
+        pcs-camera-server
+        pcs-mqtt-publisher
+
+        RUNTIME DESTINATION
+        ${CMAKE_INSTALL_PREFIX}/bin
+    )
+endif()
+
 
