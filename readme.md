@@ -1,11 +1,11 @@
-#Pointcloud Stitching for ARENA
+# Pointcloud Stitching for ARENA
 
-##Overview
+## Overview
 Scalable, multicamera distributed system for realtime pointcloud stitching in the ARENA (Augmented Reality Environment ~~in something~~ Area/Arena). This program is currently designed to use the **D400 Series Intel RealSense** depth cameras. Using the [Librealsense 2.0 SDK](https://github.com/IntelRealSense/librealsense), depth frames are grabbed and pointclouds are computed on the edge, before sending the raw XYZRGB values to a central computer over a TCP socket. The central program stitches the pointclouds together and displays it a viewer using [PCL](http://pointclouds.org/) libraries.
 
-##Installation
+## Installation
 Different steps of installation are required for installing the realsense camera servers versus the central computing system.
-####Camera servers on the edge
+#### Camera servers on the edge
 - Go to [Librealsense Github](https://github.com/IntelRealSense/librealsense) and follow the instructions to install the Librealsense 2.0 SDK
 - Install [Paho-MQTT](https://github.com/eclipse/paho.mqtt.cpp) for c++
 - Install openssh-server to make it easier for access
@@ -16,7 +16,7 @@ Different steps of installation are required for installing the realsense camera
 `cmake ..`
 `make && sudo make install`
 
-####Central computing system
+#### Central computing system
 - Follow the instructions to download and install PCL libraries from their [website](http://www.pointclouds.org/documentation/tutorials/compiling_pcl_posix.php).
 - Install [Paho-MQTT](https://github.com/eclipse/paho.mqtt.cpp) for c++
 - Install openssh-client to run commands on the edge computers from the central computer
