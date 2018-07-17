@@ -3,6 +3,8 @@
 ## Overview
 Scalable, multicamera distributed system for realtime pointcloud stitching in the ARENA (Augmented Reality Environment ~~in something~~ Area/Arena). This program is currently designed to use the **D400 Series Intel RealSense** depth cameras. Using the [Librealsense 2.0 SDK](https://github.com/IntelRealSense/librealsense), depth frames are grabbed and pointclouds are computed on the edge, before sending the raw XYZRGB values to a central computer over a TCP socket. The central program stitches the pointclouds together and displays it a viewer using [PCL](http://pointclouds.org/) libraries.
 
+This system has been designed in mind to allow 10-20 cameras to be connected simultaneously. Currently, our set up involves each RealSense depth camera connected to its own Intel i7 NUC computer. Each NUC is connected to a local network via ethernet, as well as the central computer that will be doing the bulk of the computing. Our current camera calibration method is to use a Theodolite, a survey precision instrument, to obtain real world coordinates of each camera (this will be updated soon I hope). 
+
 ## Installation
 Different steps of installation are required for installing the realsense camera servers versus the central computing system.
 #### Camera servers on the edge
@@ -21,7 +23,7 @@ Different steps of installation are required for installing the realsense camera
 - Install [Paho-MQTT](https://github.com/eclipse/paho.mqtt.cpp) for c++
 - Install openssh-client to run commands on the edge computers from the central computer<br />
 `apt-get install openssh-client`
-- Install python3 to run the camera-registration script<br />
+- Install python3 and other packages (Needed to run the camera-registration script)<br />
 `sudo apt-get update`<br />
 `sudo apt-get install python3.6`<br />
 `sudo apt-get install python3-pip`<br />
