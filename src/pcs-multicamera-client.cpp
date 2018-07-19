@@ -1,3 +1,14 @@
+/*
+ * Evan Li
+ * pcs-multicamera-client.cpp
+ *
+ * Creates multiple TCP connections where each connection is sending
+ * pointclouds in realtime to the client for post processing and 
+ * visualization. Each pointcloud is rotated and translated through
+ * a hardcoded transform that was precomputed from a camera registration
+ * step. 
+ */
+
 #include <librealsense2/rs.hpp>
 #include <pcl/point_cloud.h>
 #include <pcl/visualization/pcl_visualizer.h>
@@ -26,12 +37,13 @@ typedef std::chrono::duration<double, std::milli> timeMilli;
 
 const int PORT = 8000;
 const int BUF_SIZE = 4000000;
-const int NUM_CAMERAS = 2;
+const int NUM_CAMERAS = 1;
 const float CONV_RATE = 1000.0;
 const char PULL_XYZ = 'Y';
 const char PULL_XYZRGB = 'Z';
-// const std::string IP_ADDRESS[2] = {"192.168.0.117", "192.168.0.115"}; 
-const std::string IP_ADDRESS[2] = {"192.168.0.117", "192.168.0.115"}; 
+const std::string MQTT_SERVER_ADDR("tcp://192.168.0.113:1883");
+const std::string MQTT_CLIENT_ID("sewing_machine");
+const std::string IP_ADDRESS[2] = {"192.168.0.116", "192.168.0.115"}; 
 
 bool fast = false;
 bool timer = false;
@@ -75,6 +87,23 @@ void parseArgs(int argc, char** argv) {
     }
 }
 
+// Setup mqtt subscriber client
+// void initMQTTSubscriber() {
+//     mqtt::client client(MQTT_SERVER_ADDR, MQTT_CLIENT_ID);
+//     mqtt::connect_options conn_opts;
+//     conn_opts.set_keep_alive_interval(1);
+//     conn_opts.set_clean_session(true);
+//     conn_opts.set_automatic_reconnect(true);
+
+//     client.connect(conn_opts);
+//     client.subscribe("camera_id", 1);
+
+//     while (1) {
+
+//     }
+// }
+
+// Create TCP socket with specific port and IP address.
 int initSocket(int port, std::string ip_addr) {
     int sockfd;
     struct sockaddr_in serv_addr;
@@ -97,6 +126,7 @@ int initSocket(int port, std::string ip_addr) {
     return sockfd;
 }
 
+// Sends pull request to socket to signal server to send pointcloud data.
 void sendPullRequest(int sockfd, char pull_char) {
     if (send(sockfd, &pull_char, 1, 0) < 0) {
         std::cerr << "Pull request failure from sockfd: " << sockfd << std::endl;
@@ -104,6 +134,8 @@ void sendPullRequest(int sockfd, char pull_char) {
     }
 }
 
+// Helper function to read N bytes from the buffer to ensure that 
+// the entire buffer has been read from.
 void readNBytes(int sockfd, unsigned int n, void * buffer) {
     int total_bytes, bytes_read;
     total_bytes = 0;
@@ -118,6 +150,8 @@ void readNBytes(int sockfd, unsigned int n, void * buffer) {
     }
 }
 
+// Parses the buffer and converts the short values into float points for
+// each point in the cloud.
 pointCloudXYZ::Ptr convertBufferToPointCloudXYZ(short * buffer, int size) {
     pointCloudXYZ::Ptr new_cloud(new pointCloudXYZ);
 
@@ -135,6 +169,8 @@ pointCloudXYZ::Ptr convertBufferToPointCloudXYZ(short * buffer, int size) {
     return new_cloud;
 }
 
+// Parses the buffer and converts the short values into float points and 
+// puts the XYZ and RGB values into the pointcloud.
 pointCloudXYZRGB::Ptr convertBufferToPointCloudXYZRGB(short * buffer, int size) {
     pointCloudXYZRGB::Ptr new_cloud(new pointCloudXYZRGB);
 
@@ -150,11 +186,13 @@ pointCloudXYZRGB::Ptr convertBufferToPointCloudXYZRGB(short * buffer, int size) 
         new_cloud->points[i].r = (uint8_t)(buffer[i * 5 + 3] & 0xFF);
         new_cloud->points[i].g = (uint8_t)(buffer[i * 5 + 3] >> 8);
         new_cloud->points[i].b = (uint8_t)(buffer[i * 5 + 4] & 0xFF);
-    }
 
+    }
+    
     return new_cloud;
 }
 
+// Reads from the buffer and converts the data into a new XYZ pointcloud.
 void updateCloudXYZ(int thread_num, int sockfd, pointCloudXYZ::Ptr cloud) {
     timePoint loop_start, loop_end, read_start, read_end_convert_start, convert_end;
     if (timer)
@@ -168,6 +206,8 @@ void updateCloudXYZ(int thread_num, int sockfd, pointCloudXYZ::Ptr cloud) {
 
     readNBytes(sockfd, sizeof(int), (void *)&size);
     readNBytes(sockfd, size, (void *)&cloud_buf[0]);
+    // Send pull_XYZ request after finished reading 
+    sendPullRequest(sockfd, PULL_XYZ);
 
     if (timer)
         read_end_convert_start = std::chrono::high_resolution_clock::now();
@@ -177,7 +217,6 @@ void updateCloudXYZ(int thread_num, int sockfd, pointCloudXYZ::Ptr cloud) {
     if (timer)
         convert_end = std::chrono::high_resolution_clock::now();
 
-    sendPullRequest(sockfd, PULL_XYZ);
     free(cloud_buf);
 
     if (timer) {
@@ -188,6 +227,7 @@ void updateCloudXYZ(int thread_num, int sockfd, pointCloudXYZ::Ptr cloud) {
     }
 }
 
+// Reads from the buffer and converts the data into a new XYZRGB pointcloud.
 void updateCloudXYZRGB(int thread_num, int sockfd, pointCloudXYZRGB::Ptr cloud) {
     timePoint loop_start, loop_end, read_start, read_end_convert_start, convert_end;
     if (timer)
@@ -201,6 +241,8 @@ void updateCloudXYZRGB(int thread_num, int sockfd, pointCloudXYZRGB::Ptr cloud) 
 
     readNBytes(sockfd, sizeof(int), (void *)&size);
     readNBytes(sockfd, size, (void *)&cloud_buf[0]);
+    // Send a pull_XYZRGB request after finished reading from buffer
+    sendPullRequest(sockfd, PULL_XYZRGB);
 
     if (timer)
         read_end_convert_start = std::chrono::high_resolution_clock::now();
@@ -210,7 +252,6 @@ void updateCloudXYZRGB(int thread_num, int sockfd, pointCloudXYZRGB::Ptr cloud) 
     if (timer)
         convert_end = std::chrono::high_resolution_clock::now();
 
-    sendPullRequest(sockfd, PULL_XYZRGB);
     free(cloud_buf);
 
     if (timer) {
@@ -221,6 +262,7 @@ void updateCloudXYZRGB(int thread_num, int sockfd, pointCloudXYZRGB::Ptr cloud) 
     }
 }
 
+// Primary function to update the pointcloud viewer with an XYZ pointcloud. 
 void runFastStitching() {
     timePoint loop_start, loop_end;
     timePoint transform_timer[NUM_CAMERAS * 2];
@@ -229,15 +271,16 @@ void runFastStitching() {
     pointCloudXYZ::Ptr stitched_cloud(new pointCloudXYZ);
     pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> cloud_handler(stitched_cloud, 255, 255, 255);
 
+    // Initializing cloud pointers, pointcloud viewer, and sending pull 
+    // requests to each camera server.
     for (int i = 0; i < NUM_CAMERAS; i++) {
+        sendPullRequest(sockfd[i], PULL_XYZ);
         cloud_ptr[i] = pointCloudXYZ::Ptr(new pointCloudXYZ);
         tf_clouds[i] = pointCloudXYZ::Ptr(new pointCloudXYZ);
-        sendPullRequest(sockfd[i], PULL_XYZ);
     }
-
     viewer.setBackgroundColor(0.05, 0.05, 0.05, 0);
     viewer.addPointCloud(stitched_cloud, cloud_handler, "cloud");
-    viewer.setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, "cloud");
+    viewer.setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 4, "cloud");
 
     while (!viewer.wasStopped()) {
         if (timer)
@@ -245,10 +288,12 @@ void runFastStitching() {
 
         stitched_cloud->clear();
 
+        // Spawn a thread for each camera and update pointcloud
         for (int i = 0; i < NUM_CAMERAS; i++) {
             pcs_thread[i] = std::thread(updateCloudXYZ, i, sockfd[i], cloud_ptr[i]);
         }
 
+        // Wait for thread to finish running, perform transformation, then combine clouds
         for (int i = 0; i < NUM_CAMERAS; i++) {
             pcs_thread[i].join();
 
@@ -266,8 +311,9 @@ void runFastStitching() {
         }
 
         if (save) {
-            std::string filename = "stitched_cloud_"  + framecount;
+            std::string filename("pointclouds/stitched_cloud_"  + std::to_string(framecount) + ".ply");
             pcl::io::savePLYFileBinary(filename, *stitched_cloud);
+            std::cout << "Saved frame " << framecount << std::endl;
             framecount++;
             if (framecount == 20)
                 save = false;
@@ -284,6 +330,7 @@ void runFastStitching() {
     }
 }
 
+// Primary function to update the pointcloud viewer with an XYZRGB pointcloud. 
 void runStitching() {
     timePoint loop_start, loop_end;
     timePoint transform_timer[NUM_CAMERAS * 2];
@@ -292,12 +339,13 @@ void runStitching() {
     pointCloudXYZRGB::Ptr stitched_cloud(new pointCloudXYZRGB);
     pcl::visualization::PointCloudColorHandlerRGBField<pcl::PointXYZRGB> cloud_handler(stitched_cloud);
 
+    // Initializing cloud pointers, pointcloud viewer, and sending pull 
+    // requests to each camera server.
     for (int i = 0; i < NUM_CAMERAS; i++) {
         cloud_ptr[i] = pointCloudXYZRGB::Ptr(new pointCloudXYZRGB);
         tf_clouds[i] = pointCloudXYZRGB::Ptr(new pointCloudXYZRGB);
         sendPullRequest(sockfd[i], PULL_XYZRGB);
     }
-
     viewer.setBackgroundColor(0.05, 0.05, 0.05, 0);
     viewer.addPointCloud(stitched_cloud, cloud_handler, "cloud");
     viewer.setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, "cloud");
@@ -308,10 +356,12 @@ void runStitching() {
 
         stitched_cloud->clear();
 
+        // Spawn a thread for each camera and update pointcloud
         for (int i = 0; i < NUM_CAMERAS; i++) {
             pcs_thread[i] = std::thread(updateCloudXYZRGB, i, sockfd[i], cloud_ptr[i]);
         }
 
+        // Wait for thread to finish running, perform transformation, then combine clouds
         for (int i = 0; i < NUM_CAMERAS; i++) {
             pcs_thread[i].join();
 
@@ -329,8 +379,9 @@ void runStitching() {
         }
 
         if (save) {
-            std::string filename = "stitched_cloud_"  + framecount;
+            std::string filename("pointclouds/stitched_cloud_"  + std::to_string(framecount) + ".ply");
             pcl::io::savePLYFileBinary(filename, *stitched_cloud);
+            std::cout << "Saved frame " << framecount << std::endl;
             framecount++;
             if (framecount == 20)
                 save = false;
@@ -350,15 +401,12 @@ int main(int argc, char** argv) {
     parseArgs(argc, argv);
 
     /* Reminder: how transformation matrices work :
-
                  |-------> This column is the translation, which represents the location of the camera with respect to the origin
     | r00 r01 r02 x |  \
     | r10 r11 r12 y |   }-> Replace the 3x3 "r" matrix on the left with the rotation matrix
     | r20 r21 r22 z |  /
     |   0   0   0 1 |    -> We do not use this line (and it has to stay 0,0,0,1)
-
     */
-
     transform[0] << -0.99574067,  0.02631655, -0.08836260,  0.02300000,
                      0.09219821,  0.28421870, -0.95431610,  2.05300000,
                      0.00000000, -0.95839823, -0.28543446,  1.84600000,
@@ -368,6 +416,8 @@ int main(int argc, char** argv) {
                     -0.13694491, -0.34463012,  0.92869595, -1.86300000,
                      0.00456483, -0.93773833, -0.34731253,  1.90300000,
                      0.00000000,  0.00000000,  0.00000000,  1.00000000;
+
+    // std::thread mqtt_thread = std::thread(initMQTTSubscriber);
 
     for (int i = 0; i < NUM_CAMERAS; i++) {
         sockfd[i] = initSocket(8000 + i, IP_ADDRESS[i]);

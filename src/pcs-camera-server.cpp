@@ -1,3 +1,14 @@
+/*
+ * Evan Li
+ * pcs-camera-server.cpp
+ *
+ * This program uses the librealsense library to grab frames from 
+ * a D-400 Series Intel RealSense depth camera, and compute the 3D
+ * point cloud. The raw XYZ and RGB values are then sent over a TCP
+ * socket to a central computer to perform post-processing and 
+ * visualization. 
+ */
+
 #include <librealsense2/rs.hpp>
 
 #include <signal.h>
@@ -20,12 +31,14 @@ int client_sock = 0;
 int sockfd = 0;
 short * buffer;
 
+
 void sigintHandler(int dummy) {
     close(client_sock);
     close(sockfd);
     free(buffer);
 }
 
+// Creates TCP stream socket and connects to the central computer.
 void initSocket(int port) {
     struct sockaddr_in serv_addr;
     memset(&serv_addr, 0, sizeof(serv_addr));
@@ -58,20 +71,19 @@ void initSocket(int port) {
     std::cout << "Established connection with client_sock: " << client_sock << std::endl;
 }
 
+// Returns the RGB value of a point in the pointcloud.
 std::tuple<uint8_t, uint8_t, uint8_t> get_texcolor(rs2::video_frame texture, rs2::texture_coordinate texcoords) {
-
-    // auto write_to_buffer_start = std::chrono::high_resolution_clock::now();
     const int w = texture.get_width(), h = texture.get_height();
     int x = std::min(std::max(int(texcoords.u*w + .5f), 0), w - 1);
     int y = std::min(std::max(int(texcoords.v*h + .5f), 0), h - 1);
     int idx = x * texture.get_bytes_per_pixel() + y * texture.get_stride_in_bytes();
     const auto texture_data = reinterpret_cast<const uint8_t*>(texture.get_data());
-    // auto write_to_buffer_end = std::chrono::high_resolution_clock::now();
-    // std::cout << "#: " << std::chrono::duration<double, std::milli>(write_to_buffer_end - write_to_buffer_start).count() << std::endl;
 
     return std::tuple<uint8_t, uint8_t, uint8_t>(texture_data[idx], texture_data[idx + 1], texture_data[idx + 2]);
 }
 
+// Converts the XYZ values into shorts for less memory overhead,
+// and puts the XYZRGB values of each point into the buffer.
 int copyPointCloudXYZRGBToBuffer(rs2::points& pts, const rs2::video_frame& color, short * pc_buffer) {
     auto vertices = pts.get_vertices();
     auto tex_coords = pts.get_texture_coordinates();
@@ -93,6 +105,8 @@ int copyPointCloudXYZRGBToBuffer(rs2::points& pts, const rs2::video_frame& color
     return size;
 }
 
+// Converts the XYZ values into shorts for less memory overhead,
+// and puts the XYZ values of each point into the buffer. 
 int copyPointCloudXYZToBuffer(rs2::points& pts, short * pc_buffer) {
     auto vertices = pts.get_vertices();
     int size = 0;
@@ -120,6 +134,7 @@ int main (int argc, char** argv) {
     rs2::device selected_device = selection.get_device();
     auto depth_sensor = selected_device.first<rs2::depth_sensor>();
 
+    // Turn off laser emitter for better accuracy with multiple camera setup
     if (depth_sensor.supports(RS2_OPTION_EMITTER_ENABLED))
         depth_sensor.set_option(RS2_OPTION_EMITTER_ENABLED, 0.f);
 
@@ -127,52 +142,43 @@ int main (int argc, char** argv) {
     signal(SIGINT, sigintHandler);
 
     while (1) {
-
-        // auto loop_start = std::chrono::high_resolution_clock::now();
+        // Wait for pull request
         if (recv(client_sock, pull_request, 1, 0) < 0) {
             std::cout << "Client disconnected" << std::endl;
             break;
         }
-        if (pull_request[0] == 'Y') {
+        if (pull_request[0] == 'Y') {               // Client requests color-less pointcloud (XYZ)
             auto frames = pipe.wait_for_frames();
             auto depth = frames.get_depth_frame();
             auto pts = pc.calculate(depth);
 
+            // Add size of buffer to beginning of message
             int size = copyPointCloudXYZToBuffer(pts, &buffer[0] + sizeof(short));
             size = 3 * size * sizeof(short);
             memcpy(buffer, &size, sizeof(int));
 
             send(client_sock, (char *)buffer, size + sizeof(int), 0);
         }
-        else if (pull_request[0] == 'Z') {          // Get XYZRGB point clouds
-            // auto grab_frame_start = std::chrono::high_resolution_clock::now();
+        else if (pull_request[0] == 'Z') {          // Client requests color pointcloud (XYZRGB)
             auto frames = pipe.wait_for_frames();
             auto depth = frames.get_depth_frame();
             auto color = frames.get_color_frame();
             auto pts = pc.calculate(depth);
-            pc.map_to(color);
-            // auto grab_frame_end = std::chrono::high_resolution_clock::now();
-            // std::cout << "Frame grabbing: " << std::chrono::duration<double, std::milli>(grab_frame_end - grab_frame_start).count() << std::endl;
+            pc.map_to(color);                       // Maps color values to a point in 3D space
 
-            // auto write_to_buffer_start = std::chrono::high_resolution_clock::now();
-            int size = copyPointCloudXYZRGBToBuffer(pts, color, &buffer[0] + sizeof(short));        // Size = number of shorts in buffer
-            size = 5 * size * sizeof(short);
-            memcpy(buffer, &size, sizeof(int));
-            // auto write_to_buffer_end = std::chrono::high_resolution_clock::now();
-            // std::cout << "Writing to buffer: " << std::chrono::duration<double, std::milli>(write_to_buffer_end - write_to_buffer_start).count() << std::endl;
+            std::thread frame_thread([] {
+                // Add size of buffer to beginning of message
+                int size = copyPointCloudXYZRGBToBuffer(pts, color, &buffer[0] + sizeof(short));
+                size = 5 * size * sizeof(short);
+                memcpy(buffer, &size, sizeof(int));
 
-            // auto send_start = std::chrono::high_resolution_clock::now();
-            send(client_sock, (char *)buffer, size + sizeof(int), 0);
-            // auto send_end = std::chrono::high_resolution_clock::now();
-            // std::cout << "Sending data: " << std::chrono::duration<double, std::milli>(send_end - send_start).count() << std::endl;
+                send(client_sock, (char *)buffer, size + sizeof(int), 0);
+            })
         }
-        else {
+        else {                                      // Did not receive a correct pull request
             std::cerr << "Faulty pull request" << std::endl;
             exit(EXIT_FAILURE);
         }
-        // auto loop_end = std::chrono::high_resolution_clock::now();
-        // std::cout << "TOTAL LOOP TIME: " << std::chrono::duration<double, std::milli>(loop_end - loop_start).count() << "\n" << std::endl;
-
     }
 
     close(client_sock);

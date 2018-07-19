@@ -1,1 +1,0 @@
-/usr/bin/c++   -std=c++11 -w -pthread  -Wno-deprecated    -rdynamic CMakeFiles/pcs-camera-server.dir/pcs-camera-server.cpp.o  -o pcs-camera-server -lrealsense2 
