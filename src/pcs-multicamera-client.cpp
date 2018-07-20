@@ -43,7 +43,7 @@ const char PULL_XYZ = 'Y';
 const char PULL_XYZRGB = 'Z';
 const std::string MQTT_SERVER_ADDR("tcp://192.168.0.113:1883");
 const std::string MQTT_CLIENT_ID("sewing_machine");
-const std::string IP_ADDRESS[2] = {"192.168.0.116", "192.168.0.115"}; 
+const std::string IP_ADDRESS[2] = {"192.168.0.113", "192.168.0.113"}; 
 
 bool fast = false;
 bool timer = false;

@@ -124,6 +124,15 @@ int copyPointCloudXYZToBuffer(rs2::points& pts, short * pc_buffer) {
     return size;
 }
 
+void sendPointcloud(rs2::points pts, rs2::video_frame color, short * buffer) {
+    // Add size of buffer to beginning of message
+    int size = copyPointCloudXYZRGBToBuffer(pts, color, &buffer[0] + sizeof(short));
+    size = 5 * size * sizeof(short);
+    memcpy(buffer, &size, sizeof(int));
+
+    send(client_sock, (char *)buffer, size + sizeof(int), 0);
+}
+
 int main (int argc, char** argv) {
     char pull_request[1] = {0};
     buffer = (short *)malloc(sizeof(short) * BUF_SIZE);
@@ -166,14 +175,7 @@ int main (int argc, char** argv) {
             auto pts = pc.calculate(depth);
             pc.map_to(color);                       // Maps color values to a point in 3D space
 
-            std::thread frame_thread([] {
-                // Add size of buffer to beginning of message
-                int size = copyPointCloudXYZRGBToBuffer(pts, color, &buffer[0] + sizeof(short));
-                size = 5 * size * sizeof(short);
-                memcpy(buffer, &size, sizeof(int));
-
-                send(client_sock, (char *)buffer, size + sizeof(int), 0);
-            })
+            std::thread frame_thread = std::thread(sendPointcloud, pts, color, buffer);
         }
         else {                                      // Did not receive a correct pull request
             std::cerr << "Faulty pull request" << std::endl;
