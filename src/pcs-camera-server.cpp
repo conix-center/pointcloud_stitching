@@ -22,6 +22,7 @@
 #include <iostream>
 #include <stdio.h>
 #include <chrono>
+#include <thread>
 
 const int PORT = 8000;
 const int BUF_SIZE = 4000000;
@@ -175,7 +176,8 @@ int main (int argc, char** argv) {
             auto pts = pc.calculate(depth);
             pc.map_to(color);                       // Maps color values to a point in 3D space
 
-            std::thread frame_thread = std::thread(sendPointcloud, pts, color, buffer);
+            std::thread frame_thread(sendPointcloud, pts, color, buffer);
+            frame_thread.detach();
         }
         else {                                      // Did not receive a correct pull request
             std::cerr << "Faulty pull request" << std::endl;
