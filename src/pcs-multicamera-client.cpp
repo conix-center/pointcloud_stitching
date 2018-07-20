@@ -37,13 +37,13 @@ typedef std::chrono::duration<double, std::milli> timeMilli;
 
 const int PORT = 8000;
 const int BUF_SIZE = 4000000;
-const int NUM_CAMERAS = 1;
+const int NUM_CAMERAS = 2;
 const float CONV_RATE = 1000.0;
 const char PULL_XYZ = 'Y';
 const char PULL_XYZRGB = 'Z';
 const std::string MQTT_SERVER_ADDR("tcp://192.168.0.113:1883");
 const std::string MQTT_CLIENT_ID("sewing_machine");
-const std::string IP_ADDRESS[2] = {"192.168.0.113", "192.168.0.113"}; 
+const std::string IP_ADDRESS[2] = {"192.168.0.116", "192.168.0.113"}; 
 
 bool fast = false;
 bool timer = false;
@@ -213,6 +213,7 @@ void updateCloudXYZ(int thread_num, int sockfd, pointCloudXYZ::Ptr cloud) {
         read_end_convert_start = std::chrono::high_resolution_clock::now();
 
     *cloud = *convertBufferToPointCloudXYZ(&cloud_buf[0], size / sizeof(short) / 3);
+    pcl::transformPointCloud(*cloud, *cloud, transform[thread_num]);
 
     if (timer)
         convert_end = std::chrono::high_resolution_clock::now();
@@ -221,9 +222,9 @@ void updateCloudXYZ(int thread_num, int sockfd, pointCloudXYZ::Ptr cloud) {
 
     if (timer) {
         loop_end = std::chrono::high_resolution_clock::now();
-        std::cout << "update XYZ: " << timeMilli(loop_end - loop_start).count() << " ms" << std::endl;
-        std::cout << "   read:    " << timeMilli(read_end_convert_start - read_start).count() << " ms" << std::endl;
-        std::cout << "   convert: " << timeMilli(convert_end - read_end_convert_start).count() << " ms" << std::endl;
+        std::cout << "   update XYZ: " << timeMilli(loop_end - loop_start).count() << " ms" << std::endl;
+        std::cout << "      read:    " << timeMilli(read_end_convert_start - read_start).count() << " ms" << std::endl;
+        std::cout << "      convert: " << timeMilli(convert_end - read_end_convert_start).count() << " ms" << std::endl;
     }
 }
 
@@ -248,6 +249,7 @@ void updateCloudXYZRGB(int thread_num, int sockfd, pointCloudXYZRGB::Ptr cloud) 
         read_end_convert_start = std::chrono::high_resolution_clock::now();
 
     *cloud = *convertBufferToPointCloudXYZRGB(&cloud_buf[0], size / sizeof(short) / 5);
+    pcl::transformPointCloud(*cloud, *cloud, transform[thread_num]);
 
     if (timer)
         convert_end = std::chrono::high_resolution_clock::now();
@@ -256,7 +258,7 @@ void updateCloudXYZRGB(int thread_num, int sockfd, pointCloudXYZRGB::Ptr cloud) 
 
     if (timer) {
         loop_end = std::chrono::high_resolution_clock::now();
-        std::cout << "update XYZRGB: " << timeMilli(loop_end - loop_start).count() << " ms" << std::endl;
+        std::cout << "   update XYZRGB: " << timeMilli(loop_end - loop_start).count() << " ms" << std::endl;
         std::cout << "      read:    " << timeMilli(read_end_convert_start - read_start).count() << " ms" << std::endl;
         std::cout << "      convert: " << timeMilli(convert_end - read_end_convert_start).count() << " ms" << std::endl;
     }
@@ -264,10 +266,9 @@ void updateCloudXYZRGB(int thread_num, int sockfd, pointCloudXYZRGB::Ptr cloud) 
 
 // Primary function to update the pointcloud viewer with an XYZ pointcloud. 
 void runFastStitching() {
-    timePoint loop_start, loop_end;
+    timePoint loop_start, loop_end, stitch_start, stitch_end_viewer_start;
     timePoint transform_timer[NUM_CAMERAS * 2];
     std::vector <pointCloudXYZ::Ptr, Eigen::aligned_allocator <pointCloudXYZ::Ptr>> cloud_ptr(NUM_CAMERAS);
-    std::vector <pointCloudXYZ::Ptr, Eigen::aligned_allocator <pointCloudXYZ::Ptr>> tf_clouds(NUM_CAMERAS);
     pointCloudXYZ::Ptr stitched_cloud(new pointCloudXYZ);
     pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> cloud_handler(stitched_cloud, 255, 255, 255);
 
@@ -276,7 +277,6 @@ void runFastStitching() {
     for (int i = 0; i < NUM_CAMERAS; i++) {
         sendPullRequest(sockfd[i], PULL_XYZ);
         cloud_ptr[i] = pointCloudXYZ::Ptr(new pointCloudXYZ);
-        tf_clouds[i] = pointCloudXYZ::Ptr(new pointCloudXYZ);
     }
     viewer.setBackgroundColor(0.05, 0.05, 0.05, 0);
     viewer.addPointCloud(stitched_cloud, cloud_handler, "cloud");
@@ -288,6 +288,9 @@ void runFastStitching() {
 
         stitched_cloud->clear();
 
+        if (timer)
+            stitch_start = std::chrono::high_resolution_clock::now();
+
         // Spawn a thread for each camera and update pointcloud
         for (int i = 0; i < NUM_CAMERAS; i++) {
             pcs_thread[i] = std::thread(updateCloudXYZ, i, sockfd[i], cloud_ptr[i]);
@@ -296,18 +299,20 @@ void runFastStitching() {
         // Wait for thread to finish running, perform transformation, then combine clouds
         for (int i = 0; i < NUM_CAMERAS; i++) {
             pcs_thread[i].join();
+            *stitched_cloud += *cloud_ptr[i];
+        }
 
-            if (timer)
-                transform_timer[i * 2] = std::chrono::high_resolution_clock::now();
+        if (timer)
+            stitch_end_viewer_start = std::chrono::high_resolution_clock::now();
 
-            pcl::transformPointCloud(*cloud_ptr[i], *tf_clouds[i], transform[i]);
+        viewer.updatePointCloud(stitched_cloud, "cloud");
+        viewer.spinOnce();
 
-            if (timer) {
-                transform_timer[i * 2 + 1] = std::chrono::high_resolution_clock::now();
-                std::cout << "transform[" << i << "] : " << timeMilli(transform_timer[i * 2 + 1] - transform_timer[i * 2]).count() << " ms" << std::endl;
-            }
-
-            *stitched_cloud += *tf_clouds[i];
+        if (timer) {
+            loop_end = std::chrono::high_resolution_clock::now();
+            std::cout << "Stitching: " << timeMilli(stitch_end_viewer_start - stitch_start).count() << " ms" << std::endl;
+            std::cout << "Update Viewer: " << timeMilli(loop_end - stitch_end_viewer_start).count() << " ms" << std::endl;
+            std::cout << "TOTAL FRAME TXFER: " << timeMilli(loop_end - loop_start).count() << " ms\n" << std::endl;
         }
 
         if (save) {
@@ -318,24 +323,13 @@ void runFastStitching() {
             if (framecount == 20)
                 save = false;
         }
-
-        viewer.updatePointCloud(stitched_cloud, "cloud");
-        viewer.spinOnce();
-
-        if (timer) {
-            loop_end = std::chrono::high_resolution_clock::now();
-            std::cout << "TOTAL FRAME TXFER: " << timeMilli(loop_end - loop_start).count() << " ms\n" << std::endl;
-            std::cout << "\n" << std::endl;
-        }
     }
 }
 
 // Primary function to update the pointcloud viewer with an XYZRGB pointcloud. 
 void runStitching() {
-    timePoint loop_start, loop_end;
-    timePoint transform_timer[NUM_CAMERAS * 2];
+    timePoint loop_start, loop_end, stitch_start, stitch_end_viewer_start;
     std::vector <pointCloudXYZRGB::Ptr, Eigen::aligned_allocator <pointCloudXYZRGB::Ptr>> cloud_ptr(NUM_CAMERAS);
-    std::vector <pointCloudXYZRGB::Ptr, Eigen::aligned_allocator <pointCloudXYZRGB::Ptr>> tf_clouds(NUM_CAMERAS);
     pointCloudXYZRGB::Ptr stitched_cloud(new pointCloudXYZRGB);
     pcl::visualization::PointCloudColorHandlerRGBField<pcl::PointXYZRGB> cloud_handler(stitched_cloud);
 
@@ -343,7 +337,6 @@ void runStitching() {
     // requests to each camera server.
     for (int i = 0; i < NUM_CAMERAS; i++) {
         cloud_ptr[i] = pointCloudXYZRGB::Ptr(new pointCloudXYZRGB);
-        tf_clouds[i] = pointCloudXYZRGB::Ptr(new pointCloudXYZRGB);
         sendPullRequest(sockfd[i], PULL_XYZRGB);
     }
     viewer.setBackgroundColor(0.05, 0.05, 0.05, 0);
@@ -356,26 +349,31 @@ void runStitching() {
 
         stitched_cloud->clear();
 
-        // Spawn a thread for each camera and update pointcloud
+        if (timer)
+            stitch_start = std::chrono::high_resolution_clock::now();
+
+        // Spawn a thread for each camera and update pointcloud, and perform transformation, 
         for (int i = 0; i < NUM_CAMERAS; i++) {
             pcs_thread[i] = std::thread(updateCloudXYZRGB, i, sockfd[i], cloud_ptr[i]);
         }
 
-        // Wait for thread to finish running, perform transformation, then combine clouds
+        // Wait for thread to finish running, then combine clouds
         for (int i = 0; i < NUM_CAMERAS; i++) {
             pcs_thread[i].join();
+            *stitched_cloud += *cloud_ptr[i];
+        }
 
-            if (timer)
-                transform_timer[i * 2] = std::chrono::high_resolution_clock::now();
+        if (timer)
+            stitch_end_viewer_start = std::chrono::high_resolution_clock::now();
 
-            pcl::transformPointCloud(*cloud_ptr[i], *tf_clouds[i], transform[i]);
+        viewer.updatePointCloud(stitched_cloud, "cloud");
+        viewer.spinOnce();
 
-            if (timer) {
-                transform_timer[i * 2 + 1] = std::chrono::high_resolution_clock::now();
-                std::cout << "transform[" << i << "] : " << timeMilli(transform_timer[i * 2 + 1] - transform_timer[i * 2]).count() << " ms" << std::endl;
-            }
-
-            *stitched_cloud += *tf_clouds[i];
+        if (timer) {
+            loop_end = std::chrono::high_resolution_clock::now();
+            std::cout << "Stitching: " << timeMilli(stitch_end_viewer_start - stitch_start).count() << " ms" << std::endl;
+            std::cout << "Update Viewer: " << timeMilli(loop_end - stitch_end_viewer_start).count() << " ms" << std::endl;
+            std::cout << "TOTAL FRAME TXFER: " << timeMilli(loop_end - loop_start).count() << " ms\n" << std::endl;
         }
 
         if (save) {
@@ -385,14 +383,6 @@ void runStitching() {
             framecount++;
             if (framecount == 20)
                 save = false;
-        }
-
-        viewer.updatePointCloud(stitched_cloud, "cloud");
-        viewer.spinOnce();
-
-        if (timer) {
-            loop_end = std::chrono::high_resolution_clock::now();
-            std::cout << "TOTAL FRAME TXFER: " << timeMilli(loop_end - loop_start).count() << " ms\n" << std::endl;
         }
     }
 }
