@@ -24,6 +24,10 @@
 #include <chrono>
 #include <thread>
 
+typedef std::chrono::high_resolution_clock clockTime;
+typedef std::chrono::time_point<clockTime> timePoint;
+typedef std::chrono::duration<double, std::milli> timeMilli;
+
 const int PORT = 8000;
 const int BUF_SIZE = 4000000;
 const int CONV_RATE = 1000;
@@ -31,12 +35,36 @@ const int CONV_RATE = 1000;
 int client_sock = 0;
 int sockfd = 0;
 short * buffer;
-
+bool timer = false;
+bool save = false;
 
 void sigintHandler(int dummy) {
     close(client_sock);
     close(sockfd);
     free(buffer);
+}
+
+void parseArgs(int argc, char** argv) {
+    int c;
+    while ((c = getopt(argc, argv, "hts")) != -1) {
+        switch(c) {
+            case 't':
+                timer = true;
+                break;
+            case 's':
+                save = true;
+                break;
+            default:
+            case 'h':
+                std::cout << "\nPointcloud stitching camera server" << std::endl;
+                std::cout << "Usage: pcs-camera-server <port> [options]\n" << std::endl;
+                std::cout << "Options:" << std::endl;
+                std::cout << " -h (help)    Display command line options" << std::endl;
+                std::cout << " -t (timer)   Displays the runtime of certain functions" << std::endl;
+                std::cout << " -s (save)    Saves 20 frames in a .ply format" << std::endl;
+                exit(0);
+        }
+    }
 }
 
 // Creates TCP stream socket and connects to the central computer.
@@ -125,7 +153,16 @@ int copyPointCloudXYZToBuffer(rs2::points& pts, short * pc_buffer) {
     return size;
 }
 
-void sendPointcloud(rs2::points pts, rs2::video_frame color, short * buffer) {
+void sendXYZPointcloud(rs2::points pts, short * buffer) {
+    // Add size of buffer to beginning of message
+    int size = copyPointCloudXYZToBuffer(pts, &buffer[0] + sizeof(short));
+    size = 3 * size * sizeof(short);
+    memcpy(buffer, &size, sizeof(int));
+
+    send(client_sock, (char *)buffer, size + sizeof(int), 0);
+}
+
+void sendXYZRGBPointcloud(rs2::points pts, rs2::video_frame color, short * buffer) {
     // Add size of buffer to beginning of message
     int size = copyPointCloudXYZRGBToBuffer(pts, color, &buffer[0] + sizeof(short));
     size = 5 * size * sizeof(short);
@@ -135,8 +172,11 @@ void sendPointcloud(rs2::points pts, rs2::video_frame color, short * buffer) {
 }
 
 int main (int argc, char** argv) {
+    parseArgs(argc, argv);
+
     char pull_request[1] = {0};
     buffer = (short *)malloc(sizeof(short) * BUF_SIZE);
+    timePoint frame_start, frame_end;
 
     rs2::pointcloud pc;
     rs2::pipeline pipe;
@@ -148,10 +188,13 @@ int main (int argc, char** argv) {
     if (depth_sensor.supports(RS2_OPTION_EMITTER_ENABLED))
         depth_sensor.set_option(RS2_OPTION_EMITTER_ENABLED, 0.f);
 
-    initSocket(atoi(argv[1]));      
+    initSocket(PORT);
     signal(SIGINT, sigintHandler);
 
     while (1) {
+        if (timer)
+            frame_start = std::chrono::high_resolution_clock::now();
+        
         // Wait for pull request
         if (recv(client_sock, pull_request, 1, 0) < 0) {
             std::cout << "Client disconnected" << std::endl;
@@ -162,12 +205,8 @@ int main (int argc, char** argv) {
             auto depth = frames.get_depth_frame();
             auto pts = pc.calculate(depth);
 
-            // Add size of buffer to beginning of message
-            int size = copyPointCloudXYZToBuffer(pts, &buffer[0] + sizeof(short));
-            size = 3 * size * sizeof(short);
-            memcpy(buffer, &size, sizeof(int));
-
-            send(client_sock, (char *)buffer, size + sizeof(int), 0);
+            std::thread frame_thread(sendXYZPointcloud, pts, buffer);
+            frame_thread.detach();
         }
         else if (pull_request[0] == 'Z') {          // Client requests color pointcloud (XYZRGB)
             auto frames = pipe.wait_for_frames();
@@ -176,12 +215,18 @@ int main (int argc, char** argv) {
             auto pts = pc.calculate(depth);
             pc.map_to(color);                       // Maps color values to a point in 3D space
 
-            std::thread frame_thread(sendPointcloud, pts, color, buffer);
+            std::thread frame_thread(sendXYZRGBPointcloud, pts, color, buffer);
             frame_thread.detach();
         }
         else {                                      // Did not receive a correct pull request
             std::cerr << "Faulty pull request" << std::endl;
             exit(EXIT_FAILURE);
+        }
+
+        if (timer) {
+            frame_end = std::chrono::high_resolution_clock::now();
+            std::cout << "Frame: " << timeMilli(frame_end - frame_start).count() << " ms" << std::endl;
+            std::cout << "FPS: " << 1000.0 / timeMilli(frame_end - frame_start).count() << "\n" << std::endl;
         }
     }
 
