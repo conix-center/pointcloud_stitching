@@ -54,22 +54,27 @@ Eigen::Matrix4f transform[2];
 std::thread pcs_thread[NUM_CAMERAS];
 pcl::visualization::PCLVisualizer viewer("Pointcloud stitching");
 
+// Exit gracefully by closing all open sockets
 void sigintHandler(int dummy) {
     for (int i = 0; i < NUM_CAMERAS; i++) {
         close(sockfd[i]);
     }
 }
 
+// Parse arguments for extra runtime options
 void parseArgs(int argc, char** argv) {
     int c;
     while ((c = getopt(argc, argv, "hfts")) != -1) {
         switch(c) {
+            // Displays the pointcloud without color, only XYZ values
             case 'f':
                 fast = true;
                 break;
+            // Prints out the runtime of the main expensive functions
             case 't':
                 timer = true;
                 break;
+            // Saves the first 20 frames in .ply 
             case 's':
                 save = true;
                 break;
@@ -79,7 +84,7 @@ void parseArgs(int argc, char** argv) {
                 std::cout << "Usage: pcs-multicamera-client [options]\n" << std::endl;
                 std::cout << "Options:" << std::endl;
                 std::cout << " -h (help)    Display command line options" << std::endl;
-                std::cout << " -f (fast)    Increases the frame rate at the expense of color (Default speed is slow)" << std::endl;
+                std::cout << " -f (fast)    Increases the frame rate at the expense of color" << std::endl;
                 std::cout << " -t (timer)   Displays the runtime of certain functions" << std::endl;
                 std::cout << " -s (save)    Saves 20 frames in a .ply format" << std::endl;
                 exit(0);
@@ -112,11 +117,13 @@ int initSocket(int port, std::string ip_addr) {
     serv_addr.sin_port = htons(port);
     inet_pton(AF_INET, ip_addr.c_str(), &serv_addr.sin_addr);
 
+    // Create socket
     if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
         std::cerr << "Couldn't create socket" << std::endl;
         exit(EXIT_FAILURE);
     }
 
+    // Connect to camera server
     if (connect(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) {
         std::cerr << "Connection failed." << std::endl;
         exit(EXIT_FAILURE);
@@ -140,6 +147,7 @@ void readNBytes(int sockfd, unsigned int n, void * buffer) {
     int total_bytes, bytes_read;
     total_bytes = 0;
 
+    // Keep reading until N total_bytes have been read
     while (total_bytes < n) {
         if ((bytes_read = read(sockfd, buffer + total_bytes, n - total_bytes)) < 1) {
             std::cerr << "Receive failure" << std::endl;
@@ -195,6 +203,7 @@ pointCloudXYZRGB::Ptr convertBufferToPointCloudXYZRGB(short * buffer, int size) 
 // Reads from the buffer and converts the data into a new XYZ pointcloud.
 void updateCloudXYZ(int thread_num, int sockfd, pointCloudXYZ::Ptr cloud) {
     timePoint loop_start, loop_end, read_start, read_end_convert_start, convert_end;
+
     if (timer)
         loop_start = std::chrono::high_resolution_clock::now();
 
@@ -204,6 +213,7 @@ void updateCloudXYZ(int thread_num, int sockfd, pointCloudXYZ::Ptr cloud) {
     if (timer)
         read_start = std::chrono::high_resolution_clock::now();
 
+    // Read the first integer to determine the size being sent, then read in pointcloud
     readNBytes(sockfd, sizeof(int), (void *)&size);
     readNBytes(sockfd, size, (void *)&cloud_buf[0]);
     // Send pull_XYZ request after finished reading 
@@ -212,6 +222,7 @@ void updateCloudXYZ(int thread_num, int sockfd, pointCloudXYZ::Ptr cloud) {
     if (timer)
         read_end_convert_start = std::chrono::high_resolution_clock::now();
 
+    // Parse the pointcloud and perform transformation according to camera position
     *cloud = *convertBufferToPointCloudXYZ(&cloud_buf[0], size / sizeof(short) / 3);
     pcl::transformPointCloud(*cloud, *cloud, transform[thread_num]);
 
@@ -231,6 +242,7 @@ void updateCloudXYZ(int thread_num, int sockfd, pointCloudXYZ::Ptr cloud) {
 // Reads from the buffer and converts the data into a new XYZRGB pointcloud.
 void updateCloudXYZRGB(int thread_num, int sockfd, pointCloudXYZRGB::Ptr cloud) {
     timePoint loop_start, loop_end, read_start, read_end_convert_start, convert_end;
+    
     if (timer)
         loop_start = std::chrono::high_resolution_clock::now();
 
@@ -240,6 +252,7 @@ void updateCloudXYZRGB(int thread_num, int sockfd, pointCloudXYZRGB::Ptr cloud) 
     if (timer)
         read_start = std::chrono::high_resolution_clock::now();
 
+    // Read the first integer to determine the size being sent, then read in pointcloud
     readNBytes(sockfd, sizeof(int), (void *)&size);
     readNBytes(sockfd, size, (void *)&cloud_buf[0]);
     // Send a pull_XYZRGB request after finished reading from buffer
@@ -248,6 +261,7 @@ void updateCloudXYZRGB(int thread_num, int sockfd, pointCloudXYZRGB::Ptr cloud) 
     if (timer)
         read_end_convert_start = std::chrono::high_resolution_clock::now();
 
+    // Parse the pointcloud and perform transformation according to camera position
     *cloud = *convertBufferToPointCloudXYZRGB(&cloud_buf[0], size / sizeof(short) / 5);
     pcl::transformPointCloud(*cloud, *cloud, transform[thread_num]);
 
@@ -282,6 +296,7 @@ void runFastStitching() {
     viewer.addPointCloud(stitched_cloud, cloud_handler, "cloud");
     viewer.setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 4, "cloud");
 
+    // Loop until the visualizer is stopped (press 'q' to stop viewer)
     while (!viewer.wasStopped()) {
         if (timer)
             loop_start = std::chrono::high_resolution_clock::now();
@@ -296,7 +311,7 @@ void runFastStitching() {
             pcs_thread[i] = std::thread(updateCloudXYZ, i, sockfd[i], cloud_ptr[i]);
         }
 
-        // Wait for thread to finish running, perform transformation, then combine clouds
+        // Wait for thread to finish running, then add cloud to stitched cloud
         for (int i = 0; i < NUM_CAMERAS; i++) {
             pcs_thread[i].join();
             *stitched_cloud += *cloud_ptr[i];
@@ -305,6 +320,7 @@ void runFastStitching() {
         if (timer)
             stitch_end_viewer_start = std::chrono::high_resolution_clock::now();
 
+        // Update the pointcloud visualizer
         viewer.updatePointCloud(stitched_cloud, "cloud");
         viewer.spinOnce();
 
@@ -343,6 +359,7 @@ void runStitching() {
     viewer.addPointCloud(stitched_cloud, cloud_handler, "cloud");
     viewer.setPointCloudRenderingProperties(pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, "cloud");
 
+    // Loop until the visualizer is stopped
     while (!viewer.wasStopped()) {
         if (timer)
             loop_start = std::chrono::high_resolution_clock::now();
@@ -357,7 +374,7 @@ void runStitching() {
             pcs_thread[i] = std::thread(updateCloudXYZRGB, i, sockfd[i], cloud_ptr[i]);
         }
 
-        // Wait for thread to finish running, then combine clouds
+        // Wait for thread to finish running, then add cloud to stitched cloud
         for (int i = 0; i < NUM_CAMERAS; i++) {
             pcs_thread[i].join();
             *stitched_cloud += *cloud_ptr[i];
@@ -366,6 +383,7 @@ void runStitching() {
         if (timer)
             stitch_end_viewer_start = std::chrono::high_resolution_clock::now();
 
+        // Update the pointcloud visualizer
         viewer.updatePointCloud(stitched_cloud, "cloud");
         viewer.spinOnce();
 
@@ -409,6 +427,7 @@ int main(int argc, char** argv) {
 
     // std::thread mqtt_thread = std::thread(initMQTTSubscriber);
 
+    // Init a TCP socket for each camera server
     for (int i = 0; i < NUM_CAMERAS; i++) {
         sockfd[i] = initSocket(8000 + i, IP_ADDRESS[i]);
     }

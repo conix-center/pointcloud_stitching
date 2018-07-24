@@ -38,19 +38,23 @@ short * buffer;
 bool timer = false;
 bool save = false;
 
+// Exit gracefully by closing all open sockets and freeing buffer
 void sigintHandler(int dummy) {
     close(client_sock);
     close(sockfd);
     free(buffer);
 }
 
+// Parse arguments for extra runtime options
 void parseArgs(int argc, char** argv) {
     int c;
     while ((c = getopt(argc, argv, "hts")) != -1) {
         switch(c) {
+            // Prints out the runtime of the main expensive functions and FPS
             case 't':
                 timer = true;
                 break;
+            // Saves the first 20 frames in .ply     
             case 's':
                 save = true;
                 break;
@@ -112,20 +116,17 @@ std::tuple<uint8_t, uint8_t, uint8_t> get_texcolor(rs2::video_frame texture, rs2
 }
 
 // Converts the XYZ values into shorts for less memory overhead,
-// and puts the XYZRGB values of each point into the buffer.
-int copyPointCloudXYZRGBToBuffer(rs2::points& pts, const rs2::video_frame& color, short * pc_buffer) {
+// and puts the XYZ values of each point into the buffer. 
+int copyPointCloudXYZToBuffer(rs2::points& pts, short * pc_buffer) {
     auto vertices = pts.get_vertices();
-    auto tex_coords = pts.get_texture_coordinates();
     int size = 0;
 
-    for (size_t i = 0; i < pts.size() && (5 * size + 2) < BUF_SIZE; i++) {
+    for (size_t i = 0; i < pts.size() && (3 * size + 2) < BUF_SIZE; i++) {
+        // Set cutoff range for pixel points, to lower data size, and omit outlying points
         if ((vertices[i].x != 0) && (vertices[i].x < 2) && (vertices[i].x > -2) && (vertices[i].z != 0) && (vertices[i].z < 3)) {
-            std::tuple<uint8_t, uint8_t, uint8_t> current_color = get_texcolor(color, tex_coords[i]);
-            pc_buffer[size * 5 + 0] = static_cast<short>(vertices[i].x * CONV_RATE);
-            pc_buffer[size * 5 + 1] = static_cast<short>(vertices[i].y * CONV_RATE);
-            pc_buffer[size * 5 + 2] = static_cast<short>(vertices[i].z * CONV_RATE);
-            pc_buffer[size * 5 + 3] = (short)std::get<0>(current_color) + (short)(std::get<1>(current_color) << 8);
-            pc_buffer[size * 5 + 4] = std::get<2>(current_color);
+            pc_buffer[size * 3 + 0] = static_cast<short>(vertices[i].x * CONV_RATE);
+            pc_buffer[size * 3 + 1] = static_cast<short>(vertices[i].y * CONV_RATE);
+            pc_buffer[size * 3 + 2] = static_cast<short>(vertices[i].z * CONV_RATE);
 
             size++;
         }
@@ -135,16 +136,22 @@ int copyPointCloudXYZRGBToBuffer(rs2::points& pts, const rs2::video_frame& color
 }
 
 // Converts the XYZ values into shorts for less memory overhead,
-// and puts the XYZ values of each point into the buffer. 
-int copyPointCloudXYZToBuffer(rs2::points& pts, short * pc_buffer) {
+// and puts the XYZRGB values of each point into the buffer.
+int copyPointCloudXYZRGBToBuffer(rs2::points& pts, const rs2::video_frame& color, short * pc_buffer) {
     auto vertices = pts.get_vertices();
+    auto tex_coords = pts.get_texture_coordinates();
     int size = 0;
 
-    for (size_t i = 0; i < pts.size() && (3 * size + 2) < BUF_SIZE; i++) {
-        if ((vertices[i].x != 0) && (vertices[i].x < 2) && (vertices[i].x > -2) && (vertices[i].z != 0) && (vertices[i].z < 2)) {
-            pc_buffer[size * 3 + 0] = static_cast<short>(vertices[i].x * CONV_RATE);
-            pc_buffer[size * 3 + 1] = static_cast<short>(vertices[i].y * CONV_RATE);
-            pc_buffer[size * 3 + 2] = static_cast<short>(vertices[i].z * CONV_RATE);
+    for (size_t i = 0; i < pts.size() && (5 * size + 2) < BUF_SIZE; i++) {
+        // Set cutoff range for pixel points, to lower data size, and omit outlying points
+        if ((vertices[i].x != 0) && (vertices[i].x < 2) && (vertices[i].x > -2) && (vertices[i].z != 0) && (vertices[i].z < 3)) {
+            std::tuple<uint8_t, uint8_t, uint8_t> current_color = get_texcolor(color, tex_coords[i]);
+
+            pc_buffer[size * 5 + 0] = static_cast<short>(vertices[i].x * CONV_RATE);
+            pc_buffer[size * 5 + 1] = static_cast<short>(vertices[i].y * CONV_RATE);
+            pc_buffer[size * 5 + 2] = static_cast<short>(vertices[i].z * CONV_RATE);
+            pc_buffer[size * 5 + 3] = (short)std::get<0>(current_color) + (short)(std::get<1>(current_color) << 8);
+            pc_buffer[size * 5 + 4] = std::get<2>(current_color);
 
             size++;
         }
@@ -191,6 +198,7 @@ int main (int argc, char** argv) {
     initSocket(PORT);
     signal(SIGINT, sigintHandler);
 
+    // Loop until client disconnected
     while (1) {
         if (timer)
             frame_start = std::chrono::high_resolution_clock::now();
@@ -201,20 +209,24 @@ int main (int argc, char** argv) {
             break;
         }
         if (pull_request[0] == 'Y') {               // Client requests color-less pointcloud (XYZ)
+            // Grab depth frames from realsense and calculate pointcloud coordinates
             auto frames = pipe.wait_for_frames();
             auto depth = frames.get_depth_frame();
             auto pts = pc.calculate(depth);
 
+            // Spawn a thread to send pointcloud over to client
             std::thread frame_thread(sendXYZPointcloud, pts, buffer);
             frame_thread.detach();
         }
         else if (pull_request[0] == 'Z') {          // Client requests color pointcloud (XYZRGB)
+            // Grab depth and color frames, and map each point to a color value
             auto frames = pipe.wait_for_frames();
             auto depth = frames.get_depth_frame();
             auto color = frames.get_color_frame();
             auto pts = pc.calculate(depth);
             pc.map_to(color);                       // Maps color values to a point in 3D space
 
+            // Spawn a thread to send pointcloud over to client
             std::thread frame_thread(sendXYZRGBPointcloud, pts, color, buffer);
             frame_thread.detach();
         }
