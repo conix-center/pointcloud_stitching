@@ -38,6 +38,7 @@ typedef std::chrono::duration<double, std::milli> timeMilli;
 
 const int PORT = 8000;
 const int BUF_SIZE = 4000000;
+const int STITCHED_BUF_SIZE = 32000000;
 const int NUM_CAMERAS = 8;
 const float CONV_RATE = 1000.0;
 const char PULL_XYZ = 'Y';
@@ -54,7 +55,10 @@ bool save = false;
 bool visual = false;
 int downsample = 1;
 int framecount = 0;
+int server_sockfd = 0;
+int client_sock = 0;
 int sockfd[NUM_CAMERAS];
+short * stitched_buf;
 Eigen::Matrix4f transform[NUM_CAMERAS];
 std::thread pcs_thread[NUM_CAMERAS];
 pcl::visualization::PCLVisualizer viewer("Pointcloud stitching");
@@ -193,6 +197,40 @@ int initSocket(int port, std::string ip_addr) {
     return sockfd;
 }
 
+// Creates TCP server socket and connects to the visualizing computer.
+int initServerSocket(int port) {
+    struct sockaddr_in serv_addr;
+    memset(&serv_addr, 0, sizeof(serv_addr));
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_addr.s_addr = INADDR_ANY;
+    serv_addr.sin_port = htons(port);
+
+    if ((sockfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) < 0) {
+        std::cerr << "\nSocket fd not received." << std::endl;
+        exit(EXIT_FAILURE);
+    }
+
+    if (bind(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) {
+        std::cerr << "\nBind failed" << std::endl;
+        exit(EXIT_FAILURE);
+    }
+
+    if (listen(sockfd, 3) < 0) {
+        std::cerr << "\nListen failed" << std::endl;
+        exit(EXIT_FAILURE);
+    }
+
+    std::cout << "Waiting for client..." << std::endl;
+
+    if ((client_sock = accept(sockfd, NULL, NULL)) < 0) {
+        std::cerr << "\nConnection failed" << std::endl;
+        exit(EXIT_FAILURE);
+    }
+
+    std::cout << "Established connection with client_sock: " << client_sock << std::endl;
+    return sockfd;
+}
+
 // Sends pull request to socket to signal server to send pointcloud data.
 void sendPullRequest(int sockfd, char pull_char) {
     if (send(sockfd, &pull_char, 1, 0) < 0) {
@@ -265,6 +303,23 @@ pointCloudXYZRGB::Ptr convertBufferToPointCloudXYZRGB(short * buffer, int size) 
     }
     
     return new_cloud;
+}
+
+
+int convertPointCloudXYZRGBToBuffer(pointCloudXYZRGB::Ptr cloud, short * buffer) {
+    int size = 0;
+    
+    for (int i = 0; i < cloud->width; i++) {
+        buffer[size * 5 + 0] = static_cast<short>(cloud->points[i].x * CONV_RATE);
+        buffer[size * 5 + 1] = static_cast<short>(cloud->points[i].y * CONV_RATE);
+        buffer[size * 5 + 2] = static_cast<short>(cloud->points[i].z * CONV_RATE);
+        buffer[size * 5 + 3] = static_cast<short>(cloud->points[i].r) + static_cast<short>(cloud->points[i].g << 8);
+        buffer[size * 5 + 4] = static_cast<short>(cloud->points[i].b);
+      
+        size++;
+    }
+
+    return size;
 }
 
 // Reads from the buffer and converts the data into a new XYZ pointcloud.
@@ -452,6 +507,12 @@ void runStitching() {
         if (timer)
             stitch_end_viewer_start = std::chrono::high_resolution_clock::now();
 
+        int size = convertPointCloudXYZRGBToBuffer(stitched_cloud, &stitched_buf[0] + sizeof(short));
+        size = 5 * size * sizeof(short);
+        memcpy(stitched_buf, &size, sizeof(int));
+
+        send(client_sock, (char *)stitched_buf, size + sizeof(int), 0);
+      
         // Update the pointcloud visualizer
         if (visual) {
             viewer.updatePointCloud(stitched_cloud, "cloud");
@@ -478,6 +539,8 @@ void runStitching() {
 
 int main(int argc, char** argv) {
     parseArgs(argc, argv);
+  
+    stitched_buf = (short *)malloc(sizeof(short) * STITCHED_BUF_SIZE);
 
     /* Reminder: how transformation matrices work :
                  |-------> This column is the translation, which represents the location of the camera with respect to the origin
@@ -535,6 +598,7 @@ int main(int argc, char** argv) {
     for (int i = 0; i < NUM_CAMERAS; i++) {
         sockfd[i] = initSocket(8000 + i, IP_ADDRESS[i]);
     }
+    server_sockfd = initServerSocket(9000);
     signal(SIGINT, sigintHandler);
 
     if (fast)
