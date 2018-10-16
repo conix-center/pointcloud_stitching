@@ -49,9 +49,10 @@ const char PULL_XYZRGB = 'Z';
 const std::string MQTT_SERVER_ADDR("tcp://192.168.1.112:1883");
 const std::string TOPIC("orientation");
 const std::string MQTT_CLIENT_ID("sewing_machine");
-const std::string IP_ADDRESS[NUM_CAMERAS] = {"192.168.1.128", "192.168.1.142", "192.168.1.138", "192.168.1.114", 
-                                             "192.168.1.109", "192.168.1.113", "192.168.1.149", "192.168.1.131"};
+const std::string IP_ADDRESS[8] = {"192.168.1.128", "192.168.1.142", "192.168.1.138", "192.168.1.114", 
+                                   "192.168.1.109", "192.168.1.113", "192.168.1.149", "192.168.1.131"};
 
+int loop_count = 1;
 bool fast = false;
 bool timer = false;
 bool save = false;
@@ -305,16 +306,14 @@ int convertPointCloudXYZRGBToBuffer(pointCloudXYZRGB::Ptr cloud, short * buffer)
 
 // Reads from the buffer and converts the data into a new XYZRGB pointcloud.
 void updateCloudXYZRGB(int thread_num, int sockfd, pointCloudXYZRGB::Ptr cloud) {
+    double update_total, convert_total;
     timePoint loop_start, loop_end, read_start, read_end_convert_start, convert_end;
-    
-    if (timer)
-        loop_start = std::chrono::high_resolution_clock::now();
-
-    short * cloud_buf = (short *)malloc(sizeof(short) * BUF_SIZE);
-    int size;
 
     if (timer)
         read_start = std::chrono::high_resolution_clock::now();
+
+    short * cloud_buf = (short *)malloc(sizeof(short) * BUF_SIZE);
+    int size;
 
     // Read the first integer to determine the size being sent, then read in pointcloud
     readNBytes(sockfd, sizeof(int), (void *)&size);
@@ -329,16 +328,11 @@ void updateCloudXYZRGB(int thread_num, int sockfd, pointCloudXYZRGB::Ptr cloud) 
     *cloud = *convertBufferToPointCloudXYZRGB(&cloud_buf[0], size / sizeof(short) / 5);
     pcl::transformPointCloud(*cloud, *cloud, transform[thread_num]);
 
-    if (timer)
-        convert_end = std::chrono::high_resolution_clock::now();
-
     free(cloud_buf);
 
     if (timer) {
-        loop_end = std::chrono::high_resolution_clock::now();
-        std::cout << "   update XYZRGB: " << timeMilli(loop_end - loop_start).count() << " ms" << std::endl;
-        std::cout << "      read:    " << timeMilli(read_end_convert_start - read_start).count() << " ms" << std::endl;
-        std::cout << "      convert: " << timeMilli(convert_end - read_end_convert_start).count() << " ms" << std::endl;
+        convert_end = std::chrono::high_resolution_clock::now();
+        std::cout << "updateCloud " << thread_num << ": " << timeMilli(convert_end - read_end_convert_start).count() << " ms" << std::endl;
     }
 }
 
@@ -365,6 +359,7 @@ void send_stitchedXYZRGB(pointCloudXYZRGB::Ptr stitched_cloud) {
 
 // Primary function to update the pointcloud viewer with an XYZRGB pointcloud. 
 void runStitching() {
+    double total;
     timePoint loop_start, loop_end, stitch_start, stitch_end_viewer_start;
     std::vector <pointCloudXYZRGB::Ptr, Eigen::aligned_allocator <pointCloudXYZRGB::Ptr>> cloud_ptr(NUM_CAMERAS);
     pointCloudXYZRGB::Ptr stitched_cloud(new pointCloudXYZRGB);
@@ -392,12 +387,11 @@ void runStitching() {
 
         if (timer)
             stitch_start = std::chrono::high_resolution_clock::now();
-
+       
         // Spawn a thread for each camera and update pointcloud, and perform transformation, 
         for (int i = 0; i < NUM_CAMERAS; i++) {
             pcs_thread[i] = std::thread(updateCloudXYZRGB, i, sockfd_array[i], cloud_ptr[i]);
         }
-
         // Wait for thread to finish running, then add cloud to stitched cloud
         for (int i = 0; i < NUM_CAMERAS; i++) {
             pcs_thread[i].join();
@@ -406,7 +400,7 @@ void runStitching() {
 
         if (timer)
             stitch_end_viewer_start = std::chrono::high_resolution_clock::now();
-      
+
         // Update the pointcloud visualizer
         if (visual) {
             viewer.updatePointCloud(stitched_cloud, "cloud");
@@ -417,16 +411,14 @@ void runStitching() {
             }
         }
         else {
-            // std::thread send_thread(send_stitchedXYZRGB, stitched_cloud);
-            // send_thread.detach();
             send_stitchedXYZRGB(stitched_cloud);
         }
 
         if (timer) {
-            loop_end = std::chrono::high_resolution_clock::now();
-            std::cout << "Stitching: " << timeMilli(stitch_end_viewer_start - stitch_start).count() << " ms" << std::endl;
-            std::cout << "Update Viewer: " << timeMilli(loop_end - stitch_end_viewer_start).count() << " ms" << std::endl;
-            std::cout << "TOTAL FRAME TXFER: " << timeMilli(loop_end - loop_start).count() << " ms\n" << std::endl;
+            double temp = timeMilli(stitch_end_viewer_start - stitch_start).count();
+            total += temp;
+            std::cout << "Stitch average: " << total / loop_count << " ms" << std::endl;
+            loop_count++;
         }
 
         if (save) {
@@ -453,51 +445,50 @@ int main(int argc, char** argv) {
     |   0   0   0 1 |    -> We do not use this line (and it has to stay 0,0,0,1)
     */
 
-    transform[0] << -0.99978648,  0.01457570, -0.01464761,  0.00000000,
-                     0.01960366,  0.44486850, -0.89538132,  3.80400000,
-                    -0.00653455, -0.89547729, -0.44505924,  1.90200000,
-                     0.00000000,  0.00000000,  0.00000000,  1.00000000;
+transform[0] << -0.69888007, -0.32213748,  0.63858757, -2.22900000,
+                -0.71520905,  0.32290986, -0.61984291,  2.91800000,
+                -0.00653159, -0.88991947, -0.45607091,  0.36400000,
+                 0.00000000,  0.00000000,  0.00000000,  1.00000000;
 
-    transform[1] << -0.70002499,  0.22321775, -0.67833535,  2.29000000,
-                     0.71304871,  0.27045565, -0.64685028,  1.14000000,
-                     0.03907116, -0.93649751, -0.34849084,  1.84000000,
-                     0.00000000,  0.00000000,  0.00000000,  1.00000000;
+transform[1] << -0.96127595,  0.09045863, -0.26031862,  0.31700000,
+                 0.27558764,  0.31552831, -0.90801615,  2.83300000,
+                 0.00000000, -0.94459469, -0.32823906,  0.38100000,
+                 0.00000000,  0.00000000,  0.00000000,  1.00000000;
 
-    transform[2] <<  0.03266230,  0.33810649, -0.94054089,  3.56200000,
-                     0.99946644, -0.01104923,  0.03073663, -0.51300000,
-                     0.00000000, -0.94104299, -0.33828699,  1.85800000,
-                     0.00000000,  0.00000000,  0.00000000,  1.00000000;
+transform[2] << -0.63305575,  0.28270490, -0.72063747,  2.80300000,
+                 0.77409926,  0.22724638, -0.59087175,  2.05500000,
+                -0.00328008, -0.93189968, -0.36270128,  0.42100000,
+                 0.00000000,  0.00000000,  0.00000000,  1.00000000;
 
-    transform[3] <<  0.76474240,  0.19157836, -0.61519656,  1.33000000,
-                     0.64433615, -0.22737835,  0.73015753, -2.37300000,
-                     0.00000000, -0.95477579, -0.29732673,  1.85700000,
-                     0.00000000,  0.00000000,  0.00000000,  1.00000000;
+transform[3] <<  0.17021299,  0.28598815, -0.94299433,  2.51000000,
+                 0.98527137, -0.03349883,  0.16768470, -0.27300000,
+                 0.01636663, -0.95764743, -0.28747787,  0.35900000,
+                 0.00000000,  0.00000000,  0.00000000,  1.00000000;
 
-    transform[4] <<  0.99946111, -0.00736853,  0.03198730, -0.56300000,
-                    -0.03266213, -0.32020888,  0.94678374, -3.57500000,
-                     0.00326621, -0.94731831, -0.32027699,  1.93800000,
-                     0.00000000,  0.00000000,  0.00000000,  1.00000000;
+transform[4] <<  0.72625904,  0.26139935, -0.63578155,  1.90900000,
+                 0.68735231, -0.26305364,  0.67701520, -2.81700000,
+                 0.00972668, -0.92869433, -0.37071853,  0.37900000,
+                 0.00000000,  0.00000000,  0.00000000,  1.00000000;
 
-    transform[5] <<  0.65307259, -0.33683790,  0.67825984, -2.21000000,
-                    -0.75704435, -0.31344025,  0.57327050, -1.54400000,
-                     0.01949470, -0.88786003, -0.45970047,  1.96700000,
-                     0.00000000,  0.00000000,  0.00000000,  1.00000000;
+transform[5] <<  0.98744750,  0.00686296,  0.15779838, -0.57400000,
+                -0.14665062, -0.33120318,  0.93209337, -2.69700000,
+                 0.05866025, -0.94353450, -0.32603930,  0.30900000,
+                 0.00000000,  0.00000000,  0.00000000,  1.00000000;
 
-    transform[6] <<  0.03272976, -0.42263462,  0.90570897, -3.56300000,
-                    -0.99825772, -0.05833658,  0.00885238,  0.12100000,
-                     0.04909464, -0.90442071, -0.42380762,  1.97000000,
-                     0.00000000,  0.00000000,  0.00000000,  1.00000000;
+transform[6] <<  0.67295609,  0.40193638,  0.62094867, -2.97300000,
+                -0.35777412, -0.55787451,  0.74884826, -0.41700000,
+                 0.64740079, -0.72610136, -0.23162261,  0.43400000,
+                 0.00000000,  0.00000000,  0.00000000,  1.00000000;
 
-    transform[7] << -0.79364388, -0.22495960,  0.56526327, -1.97600000,
-                    -0.60824347,  0.27352615, -0.74513309,  1.81300000,
-                     0.01301056, -0.93518801, -0.35391257,  1.96700000,
-                     0.00000000,  0.00000000,  0.00000000,  1.00000000;
+transform[7] <<  0.08929624, -0.21535297,  0.97244500, -2.95700000,
+                -0.67610010, -0.73004840, -0.09958907, -0.33900000,
+                 0.73137872, -0.64857723, -0.21079074,  0.33800000,
+                 0.00000000,  0.00000000,  0.00000000,  1.00000000;
 
     //std::thread mqtt_thread = std::thread(initMQTTSubscriber);
     // mqtt_thread.join();
 
     // Init a TCP socket for each camera server
-
     for (int i = 0; i < NUM_CAMERAS; i++) {
         sockfd_array[i] = initSocket(CLIENT_PORT + i, IP_ADDRESS[i]);
     }
@@ -507,10 +498,6 @@ int main(int argc, char** argv) {
 
     signal(SIGINT, sigintHandler);
 
-    // if (fast)
-    //     runFastStitching();
-    // else
-    //     runStitching();
     runStitching();
 
     // client.disconnect();
@@ -522,6 +509,61 @@ int main(int argc, char** argv) {
     
     return 0;
 }
+
+
+/* Function for stitching clouds faster, but transformation not implemented yet 
+
+void readCloud(int thread_num, int * size) {
+    int sockfd = sockfd_array[thread_num];
+
+    readNBytes(sockfd, sizeof(int), (void *)size);
+    readNBytes(sockfd, *size, (void *)pc_buf[thread_num]);
+    *size /= sizeof(short);
+
+    sendPullRequest(sockfd, PULL_XYZRGB);
+}
+
+void sendStitchToUnity() {
+    int stitch_size = 0;
+    int increment = 5 * downsample;
+    int buf_size[8];
+    char pull_request[1] = {0};
+    short * pcs_buf = stitched_buf + 2;
+
+    // Spawn a thread to read from each camera 
+    for (int i = 0; i < NUM_CAMERAS; i++) {
+        pcs_thread[i] = std::thread(readCloud, i, &buf_size[i]);
+    }
+
+    for (int i = 0; i < NUM_CAMERAS; i++) {
+        pcs_thread[i].join();
+
+        // For each pointcloud, store wanted points in big stitched buffer
+        // Should perform transformation before appending to buffer (not implemented yet)
+        for (int j = 0; j < buf_size[i]; j += increment) {
+            memcpy((void *)(pcs_buf + stitch_size), (void *)(pc_buf[i] + j), 5 * sizeof(short));
+            stitch_size += 5;
+        }
+    }
+
+    stitch_size *= sizeof(short);
+    memcpy(stitched_buf, &stitch_size, sizeof(int));
+
+    // Wait for pull request
+    if (recv(client_sockfd, pull_request, 1, 0) < 0) {
+        std::cout << "Client disconnected" << std::endl;
+        exit(0);
+    }
+    if (pull_request[0] == 'Z') {          // Client requests color pointcloud (XYZRGB)
+        write(client_sockfd, (char *)stitched_buf, stitch_size + sizeof(int));
+    }
+    else {                                      // Did not receive a correct pull request
+        std::cerr << "Faulty pull request" << std::endl;
+        exit(EXIT_FAILURE);
+    }
+}
+*/
+
 
 
 /*  Functions for no-color (XYZ only) pointclouds, functionality may not be 100%

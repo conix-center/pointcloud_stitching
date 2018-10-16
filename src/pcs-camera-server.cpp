@@ -138,13 +138,17 @@ int copyPointCloudXYZToBuffer(rs2::points& pts, short * pc_buffer) {
 // Converts the XYZ values into shorts for less memory overhead,
 // and puts the XYZRGB values of each point into the buffer.
 int copyPointCloudXYZRGBToBuffer(rs2::points& pts, const rs2::video_frame& color, short * pc_buffer) {
+    timePoint copy_start, copy_end;
+    if (timer)
+            copy_start = std::chrono::high_resolution_clock::now();
+
     auto vertices = pts.get_vertices();
     auto tex_coords = pts.get_texture_coordinates();
     int size = 0;
 
     for (size_t i = 0; i < pts.size() && (5 * size + 2) < BUF_SIZE; i++) {
         // Set cutoff range for pixel points, to lower data size, and omit outlying points
-        if ((vertices[i].x != 0) && (vertices[i].x < 2) && (vertices[i].x > -2) && (vertices[i].z != 0) && (vertices[i].z < 3)) {
+        if ((vertices[i].x != 0) && (vertices[i].x < 2) && (vertices[i].x > -2) && (vertices[i].z != 0) && (vertices[i].z < 1)) {
             std::tuple<uint8_t, uint8_t, uint8_t> current_color = get_texcolor(color, tex_coords[i]);
 
             pc_buffer[size * 5 + 0] = static_cast<short>(vertices[i].x * CONV_RATE);
@@ -155,6 +159,12 @@ int copyPointCloudXYZRGBToBuffer(rs2::points& pts, const rs2::video_frame& color
 
             size++;
         }
+    }
+
+
+    if (timer) {
+            copy_end = std::chrono::high_resolution_clock::now();
+            std::cout << "Copy to buffer: " << timeMilli(copy_end - copy_start).count() << " ms" << std::endl;
     }
 
     return size;
@@ -183,7 +193,7 @@ int main (int argc, char** argv) {
 
     char pull_request[1] = {0};
     buffer = (short *)malloc(sizeof(short) * BUF_SIZE);
-    timePoint frame_start, frame_end;
+    timePoint frame_start, frame_end, grab_frame_start, grab_frame_end_calculate_start, calculate_end;
 
     rs2::pointcloud pc;
     rs2::pipeline pipe;
@@ -219,12 +229,25 @@ int main (int argc, char** argv) {
             frame_thread.detach();
         }
         else if (pull_request[0] == 'Z') {          // Client requests color pointcloud (XYZRGB)
+            if (timer) {
+                grab_frame_start = std::chrono::high_resolution_clock::now();
+            }
+
             // Grab depth and color frames, and map each point to a color value
             auto frames = pipe.wait_for_frames();
             auto depth = frames.get_depth_frame();
             auto color = frames.get_color_frame();
+
+            if (timer) {
+                grab_frame_end_calculate_start = std::chrono::high_resolution_clock::now();
+            }
+
             auto pts = pc.calculate(depth);
             pc.map_to(color);                       // Maps color values to a point in 3D space
+
+            if (timer) {
+                calculate_end = std::chrono::high_resolution_clock::now();
+            }
 
             // Spawn a thread to send pointcloud over to client
             std::thread frame_thread(sendXYZRGBPointcloud, pts, color, buffer);
@@ -237,6 +260,8 @@ int main (int argc, char** argv) {
 
         if (timer) {
             frame_end = std::chrono::high_resolution_clock::now();
+            std::cout << "Grab frame: " << timeMilli(grab_frame_end_calculate_start - grab_frame_start).count() << " ms" << std::endl;
+            std::cout << "Get pointcloud: " << timeMilli(calculate_end - grab_frame_end_calculate_start).count() << " ms" << std::endl;
             std::cout << "Frame: " << timeMilli(frame_end - frame_start).count() << " ms" << std::endl;
             std::cout << "FPS: " << 1000.0 / timeMilli(frame_end - frame_start).count() << "\n" << std::endl;
         }
