@@ -44,14 +44,12 @@ Each realsense is connected to an Intel i7 NUC, which are all accessible through
 ## Usage
 Build image
 ```
-sudo docker build . -t pcl
+sudo docker build . -t pcs
 ```
 
 Run image
 ```
-sudo docker run -it --rm pcl
+sudo docker run -it --rm pcs
 ```
 
-`mkdir build && cd build`<br />
-`cmake .. -DBUILD_CLIENT=true`<br />
-`make && make install`
+`mkdir build && cd build && cmake .. -DBUILD_CLIENT=true && make && make install`
