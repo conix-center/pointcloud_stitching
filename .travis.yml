@@ -1,0 +1,17 @@
+language: cpp
+
+os: linux
+
+sudo: required
+
+services:
+  - docker
+  
+before_install:
+  - docker build -t pointcloud .
+  - docker images
+
+script: docker run pointcloud /bin/sh -c "mkdir build && cd build && cmake .. -DBUILD_CLIENT=true && make && make install"
+
+notifications:
+    slack: wiselab-ece:7BL2SYobs6gbNQSEOHLiyxLr
