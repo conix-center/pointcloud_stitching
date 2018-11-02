@@ -23,18 +23,15 @@ else()
     set(RS2_DEPENDENCIES realsense2 ${OPENGL_LIBRARIES})
 
     add_executable(pcs-camera-server pcs-camera-server.cpp)
-    target_link_libraries(pcs-camera-server
-        ${RS2_DEPENDENCIES})
-        ${MQTT_DEPENDENCIES})
-        
-    add_executable(pcs-mqtt-publisher pcs-mqtt-publisher.cpp)
-    target_link_libraries(pcs-mqtt-publisher ${MQTT_DEPENDENCIES})
-
+    target_link_libraries(
+        pcs-camera-server
+        ${RS2_DEPENDENCIES}
+    )
+  
     install(
         TARGETS
 
         pcs-camera-server
-        pcs-mqtt-publisher
 
         RUNTIME DESTINATION
         ${CMAKE_INSTALL_PREFIX}/bin
