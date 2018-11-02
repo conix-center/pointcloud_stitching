@@ -51,5 +51,5 @@ Run image
 ```
 sudo docker run -it --rm pcs
 ```
-
-`mkdir build && cd build && cmake .. -DBUILD_CLIENT=true && make && make install`
+Build Camera Server
+`mkdir build && cd build && cmake .. && make && make install`
