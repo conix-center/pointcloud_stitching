@@ -6,6 +6,13 @@ project(Point_Cloud_Stitching)
 # Save the command line compile commands in the build output
 set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
 
+# Enable Optimizations 115 vs 71.2  31 vs 36ms 
+# if(NOT CMAKE_BUILD_TYPE)
+#   set(CMAKE_BUILD_TYPE Release)
+# endif()
+
+#set(CMAKE_CXX_FLAGS_RELEASE "-O3")
+
 option(BUILD_CLIENT "Build the central computing client" OFF)
 
 include(CheckCXXCompilerFlag)
@@ -15,11 +22,12 @@ CHECK_CXX_COMPILER_FLAG("-std=c++0x" COMPILER_SUPPORTS_CXX0X)
 
 if(COMPILER_SUPPORTS_CXX11)
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=c11")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -w -pthread")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -O3 -w -pthread")
 elseif(COMPILER_SUPPORTS_CXX0X)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++0x -w -pthread")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++0x -O3 -w -pthread")
 endif()
 
 #set(MQTT_DEPENDENCIES paho-mqttpp3 paho-mqtt3a)
 
 add_subdirectory(src)
+
