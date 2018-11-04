@@ -7,20 +7,13 @@
 #include <librealsense2/rs.hpp>
 
 #include <signal.h>
-#include <unistd.h>
-#include <sys/socket.h>
-#include <stdlib.h>
-#include <netinet/in.h>
-#include <cstring>
-#include <stdlib.h>
-#include <vector>
-#include <iostream>
-#include <stdio.h>
 
 #include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <getopt.h>
+
+#include <iostream>
 
 char *filename = "samples.bag";
 int n_frames = 30;
