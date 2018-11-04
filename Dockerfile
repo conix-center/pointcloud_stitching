@@ -20,7 +20,7 @@ RUN	apt-key adv --keyserver keys.gnupg.net --recv-key C8B3A55A6F3EFCDE || \
 RUN	add-apt-repository "deb http://realsense-hw-public.s3.amazonaws.com/Debian/apt-repo bionic main" -u
 
 RUN	apt-get update && \
-	apt-get install -y librealsense2 librealsense2-utils librealsense2-dev librealsense2-dbg
+	apt-get install -y librealsense2 librealsense2-utils librealsense2-dev librealsense2-dbg libboost-dev
 
 RUN	DEBIAN_FRONTEND=noninteractive apt-get install -y libpcl-dev
 
