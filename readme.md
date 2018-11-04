@@ -39,6 +39,11 @@ Different steps of installation are required for installing the realsense camera
 Each realsense is connected to an Intel i7 NUC, which are all accessible through ssh from the ALAN (central) computer. To start running, go through each ssh connection and run pcs-camera-server. If the servers are setup correctly, each one should say "Waiting for client...". Then on the ALAN computer, run "pcs-multicamera-client -v" to begin the pointcloud stitching (-v for visualizing the pointcloud). For more available options, run "pcs-multicamera-client -h" for help and an explanation of each option.
 
 
+## Sample files
+
+[Sample file used for testing](http://realsense-hw-public.s3.amazonaws.com/rs-tests/TestData/stairs.bag)
+
+
 # Docker
 
 ## Usage

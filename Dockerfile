@@ -12,7 +12,7 @@ WORKDIR ${work_dir}
 
 
 RUN	apt-get update && \
-	apt-get install -y htop nano vim wget build-essential cmake software-properties-common
+	apt-get install -y htop nano vim wget aria2c build-essential cmake software-properties-common
 	
 RUN	apt-key adv --keyserver keys.gnupg.net --recv-key C8B3A55A6F3EFCDE || \
 	apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-key C8B3A55A6F3EFCDE
@@ -20,12 +20,15 @@ RUN	apt-key adv --keyserver keys.gnupg.net --recv-key C8B3A55A6F3EFCDE || \
 RUN	add-apt-repository "deb http://realsense-hw-public.s3.amazonaws.com/Debian/apt-repo bionic main" -u
 
 RUN	apt-get update && \
-	apt-get install -y librealsense2 librealsense2-utils librealsense2-dev librealsense2-dbg libboost-dev
+	apt-get install -y librealsense2 librealsense2-utils librealsense2-dev librealsense2-dbg
 
 RUN	DEBIAN_FRONTEND=noninteractive apt-get install -y libpcl-dev
+
+RUN 
 
 #VOLUME /root
 
 COPY CMakeLists.txt ${work_dir}
 COPY calibration ${work_dir}/calibration
 COPY src ${work_dir}/src
+COPY samples ${work_dir}/samples

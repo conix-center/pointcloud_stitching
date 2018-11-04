@@ -20,19 +20,31 @@ if (BUILD_CLIENT)
     )
 
 else()
-    set(RS2_DEPENDENCIES realsense2 ${OPENGL_LIBRARIES})
+    find_package(Boost REQUIRED COMPONENTS serialization)
+    include_directories(${Boost_INCLUDE_DIRS})
+
+    find_package(realsense2 REQUIRED)
+
+    #set(BOOST_ROOT )
+    #set(RS2_DEPENDENCIES realsense2 ${OPENGL_LIBRARIES})
 
     add_executable(pcs-camera-server pcs-camera-server.cpp)
     target_link_libraries(
         pcs-camera-server
-        ${RS2_DEPENDENCIES}
+        realsense2
     )
-  
+
+    add_executable(pcs-camera-grab-frames pcs-camera-grab-frames.cpp)
+    target_link_libraries(
+        pcs-camera-grab-frames
+        realsense2
+    )
+
     install(
         TARGETS
 
         pcs-camera-server
-
+        
         RUNTIME DESTINATION
         ${CMAKE_INSTALL_PREFIX}/bin
     )
