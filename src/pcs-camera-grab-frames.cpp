@@ -21,6 +21,7 @@ int n_frames = 30;
 // Exit gracefully by closing all open sockets and freeing buffer
 void sigintHandler(int dummy) {
     std::cout << "\n Exiting \n " << std::endl;
+    exit(0);
 }
 
 void print_usage() {
@@ -60,16 +61,16 @@ int main (int argc, char** argv) {
     
     rs2::config cfg;
     cfg.enable_record_to_file(filename);
-    rs2::pointcloud pc;
+
     rs2::pipeline pipe;
     rs2::pipeline_profile selection = pipe.start(cfg); //File will be opened in write mode at this point
-    rs2::device selected_device = selection.get_device();
+    //rs2::device selected_device = selection.get_device();
     
-    auto depth_sensor = selected_device.first<rs2::depth_sensor>();
+    //auto depth_sensor = selected_device.first<rs2::depth_sensor>();
 
     // Turn off laser emitter for better accuracy with multiple camera setup
-    if (depth_sensor.supports(RS2_OPTION_EMITTER_ENABLED))
-        depth_sensor.set_option(RS2_OPTION_EMITTER_ENABLED, 0.f);
+    //if (depth_sensor.supports(RS2_OPTION_EMITTER_ENABLED))
+    //    depth_sensor.set_option(RS2_OPTION_EMITTER_ENABLED, 0.f);
 
     for (int i = 0; i < n_frames; i++)
     {

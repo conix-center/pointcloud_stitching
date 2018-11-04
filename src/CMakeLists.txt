@@ -40,11 +40,19 @@ else()
         realsense2
     )
 
+    add_executable(pcs-camera-test-samples pcs-camera-test-samples.cpp)
+    target_link_libraries(
+        pcs-camera-test-samples
+        realsense2
+    )
+
+
     install(
         TARGETS
 
         pcs-camera-server
         pcs-camera-grab-frames
+        pcs-camera-test-samples
         
         RUNTIME DESTINATION
         ${CMAKE_INSTALL_PREFIX}/bin
