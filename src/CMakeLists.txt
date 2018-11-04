@@ -44,6 +44,7 @@ else()
         TARGETS
 
         pcs-camera-server
+        pcs-camera-grab-frames
         
         RUNTIME DESTINATION
         ${CMAKE_INSTALL_PREFIX}/bin
