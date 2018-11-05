@@ -1,9 +1,7 @@
 /*
  * Artur Balanuta
- * pcs-camera-test-samples.cpp
- *
+ * pcs-camera-optimized.cpp
  */
-
 
 #include <cstring>
 #include <iostream>
@@ -72,10 +70,17 @@ int main (int argc, char** argv) {
     rs2::pointcloud pc;
     
     cfg.enable_device_from_file(filename);
-    pipe.start(cfg);
+    rs2::pipeline_profile selection = pipe.start(cfg);
 
     rs2::device device = pipe.get_active_profile().get_device();
-    std::cout << "Camera Info:" << device.get_info(RS2_CAMERA_INFO_NAME) << std::endl;
+    std::cout << "Camera Info: " << device.get_info(RS2_CAMERA_INFO_NAME) << " FW ver:" << device.get_info(RS2_CAMERA_INFO_FIRMWARE_VERSION) << std::endl;
+    
+    auto depth_stream = selection.get_stream(RS2_STREAM_DEPTH).as<rs2::video_stream_profile>();
+    auto resolution = std::make_pair(depth_stream.width(), depth_stream.height());
+    auto intr = depth_stream.get_intrinsics();
+
+
+    //get_extrinsics(const rs2::stream_profile& from_stream, const rs2::stream_profile& to_stream)
 
     int i = 0, last_frame = 0;
     double duration_sum = 0;
@@ -96,7 +101,7 @@ int main (int argc, char** argv) {
             if (last_frame > frames.get_frame_number()) break;
             if (last_frame == frames.get_frame_number()) continue;
             
-            std::cout << "Got Frame # " << last_frame << std::endl;
+            //std::cout << "Got Frame # " << last_frame << std::endl;
             last_frame = frames.get_frame_number();
             i++;
 
@@ -111,8 +116,8 @@ int main (int argc, char** argv) {
             sendXYZRGBPointcloud(pts, color, buffer);   // 86ms vs 9.7ms
             time_end = TIME_NOW;
 
-            std::cout << "Frame Time: " << timeMilli(time_end - time_start).count() << " ms" << std::endl;
-            std::cout << "FPS: " << 1000.0 / timeMilli(time_end - time_start).count() << "\n" << std::endl;
+            //std::cout << "Frame Time: " << timeMilli(time_end - time_start).count() << " ms" << std::endl;
+            //std::cout << "FPS: " << 1000.0 / timeMilli(time_end - time_start).count() << "\n" << std::endl;
             duration_sum += timeMilli(time_end - time_start).count();
         }
     }
@@ -155,15 +160,17 @@ int copyPointCloudXYZRGBToBuffer(rs2::points& pts, const rs2::video_frame& color
     int size = 0;
 
     for (size_t i = 0; i < pts.size() && (5 * size + 2) < BUF_SIZE; i++) {
+        
         // Set cutoff range for pixel points, to lower data size, and omit outlying points
         //if ((vertices[i].x != 0) && (vertices[i].x < 2) && (vertices[i].x > -2) && (vertices[i].z != 0) && (vertices[i].z < .5)) {
-            std::tuple<uint8_t, uint8_t, uint8_t> current_color = get_texcolor(color, tex_coords[i]);
+            
+            //std::tuple<uint8_t, uint8_t, uint8_t> current_color = get_texcolor(color, tex_coords[i]);
 
             pc_buffer[size * 5 + 0] = static_cast<short>(vertices[i].x * CONV_RATE);
             pc_buffer[size * 5 + 1] = static_cast<short>(vertices[i].y * CONV_RATE);
             pc_buffer[size * 5 + 2] = static_cast<short>(vertices[i].z * CONV_RATE);
-            pc_buffer[size * 5 + 3] = (short)std::get<0>(current_color) + (short)(std::get<1>(current_color) << 8);
-            pc_buffer[size * 5 + 4] = std::get<2>(current_color);
+            //pc_buffer[size * 5 + 3] = (short)std::get<0>(current_color) + (short)(std::get<1>(current_color) << 8);
+            //pc_buffer[size * 5 + 4] = std::get<2>(current_color);
 
             size++;
         //}

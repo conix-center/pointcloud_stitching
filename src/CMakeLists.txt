@@ -46,6 +46,12 @@ else()
         realsense2
     )
 
+    add_executable(pcs-camera-optimized pcs-camera-optimized.cpp)
+    target_link_libraries(
+        pcs-camera-optimized
+        realsense2
+    )
+
 
     install(
         TARGETS
@@ -53,6 +59,7 @@ else()
         pcs-camera-server
         pcs-camera-grab-frames
         pcs-camera-test-samples
+        pcs-camera-optimized
         
         RUNTIME DESTINATION
         ${CMAKE_INSTALL_PREFIX}/bin
