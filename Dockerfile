@@ -12,7 +12,7 @@ WORKDIR ${work_dir}
 
 
 RUN	apt-get update && \
-	apt-get install -y htop nano vim wget aria2c build-essential cmake software-properties-common
+	apt-get install -y htop nano vim git wget aria2 build-essential cmake software-properties-common
 	
 RUN	apt-key adv --keyserver keys.gnupg.net --recv-key C8B3A55A6F3EFCDE || \
 	apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-key C8B3A55A6F3EFCDE
