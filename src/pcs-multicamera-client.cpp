@@ -15,7 +15,7 @@
 #include <pcl/common/transforms.h>
 #include <pcl/io/ply_io.h>
 #include <pcl/filters/voxel_grid.h>
-#include "mqtt/client.h"
+//#include "mqtt/client.h"
 
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -37,11 +37,11 @@ typedef std::chrono::high_resolution_clock clockTime;
 typedef std::chrono::time_point<clockTime> timePoint;
 typedef std::chrono::duration<double, std::milli> timeMilli;
 
-const int NUM_CAMERAS = 8;
+const int NUM_CAMERAS = 1;
 
 const int CLIENT_PORT = 8000;
 const int SERVER_PORT = 9000;
-const int BUF_SIZE = 4000000;
+const int BUF_SIZE = 5000000;
 const int STITCHED_BUF_SIZE = 32000000;
 const float CONV_RATE = 1000.0;
 const char PULL_XYZ = 'Y';
@@ -66,7 +66,7 @@ short * stitched_buf;
 Eigen::Matrix4f transform[NUM_CAMERAS];
 std::thread pcs_thread[NUM_CAMERAS];
 pcl::visualization::PCLVisualizer viewer("Pointcloud Stitching");
-mqtt::client client(MQTT_SERVER_ADDR, MQTT_CLIENT_ID);
+//mqtt::client client(MQTT_SERVER_ADDR, MQTT_CLIENT_ID);
 
 // Exit gracefully by closing all open sockets
 void sigintHandler(int dummy) {
@@ -81,9 +81,12 @@ void sigintHandler(int dummy) {
 // Parse arguments for extra runtime options
 void parseArgs(int argc, char** argv) {
     int c;
-    while ((c = getopt(argc, argv, "hftsvd:")) != -1) {
+    while ((c = getopt(argc, argv, "hftsvd:n")) != -1) {
         switch(c) {
             // Displays the pointcloud without color, only XYZ values
+            case 'n':
+                clean = false;
+                break;
             case 'f':
                 fast = true;
                 break;
@@ -119,64 +122,64 @@ void parseArgs(int argc, char** argv) {
     }
 }
 
-// Attempts to reconnect to MQTT broker
-bool try_reconnect()
-{
-    constexpr int N_ATTEMPT = 30;
+// // Attempts to reconnect to MQTT broker
+// bool try_reconnect()
+// {
+//     constexpr int N_ATTEMPT = 30;
 
-    for (int i = 0; i < N_ATTEMPT && !client.is_connected(); ++i) {
-        try {
-            client.reconnect();
-            return true;
-        }
-        catch (const mqtt::exception&) {
-            std::this_thread::sleep_for(std::chrono::seconds(1));
-        }
-    }
-    return false;
-}
+//     for (int i = 0; i < N_ATTEMPT && !client.is_connected(); ++i) {
+//         try {
+//             client.reconnect();
+//             return true;
+//         }
+//         catch (const mqtt::exception&) {
+//             std::this_thread::sleep_for(std::chrono::seconds(1));
+//         }
+//     }
+//     return false;
+// }
 
-// Setup mqtt subscriber client
-void initMQTTSubscriber() {
-    mqtt::connect_options conn_opts;
-    conn_opts.set_keep_alive_interval(20);
-    conn_opts.set_clean_session(true);
-    conn_opts.set_automatic_reconnect(true);
+// // Setup mqtt subscriber client
+// void initMQTTSubscriber() {
+//     mqtt::connect_options conn_opts;
+//     conn_opts.set_keep_alive_interval(20);
+//     conn_opts.set_clean_session(true);
+//     conn_opts.set_automatic_reconnect(true);
     
-    try {
-        client.connect(conn_opts);
-        client.subscribe(TOPIC, 1);
+//     try {
+//         client.connect(conn_opts);
+//         client.subscribe(TOPIC, 1);
 
-        while (1) {
-            auto msg = client.consume_message();
+//         while (1) {
+//             auto msg = client.consume_message();
 
-            if (!msg) {
-                if (!client.is_connected()) {
-                    std::cout << "Lost connection. Attempting to reconnect" << std::endl;
-                    if (try_reconnect()) {
-                        client.subscribe(TOPIC, 1);
-                        std::cout << "Reconnected" << std::endl;
-                        continue;
-                    }
-                    else {
-                        std::cout << "Reconnect failed." << std::endl;
-                        break;
-                    }
-                }
-                else
-                    break;
-            }
+//             if (!msg) {
+//                 if (!client.is_connected()) {
+//                     std::cout << "Lost connection. Attempting to reconnect" << std::endl;
+//                     if (try_reconnect()) {
+//                         client.subscribe(TOPIC, 1);
+//                         std::cout << "Reconnected" << std::endl;
+//                         continue;
+//                     }
+//                     else {
+//                         std::cout << "Reconnect failed." << std::endl;
+//                         break;
+//                     }
+//                 }
+//                 else
+//                     break;
+//             }
 
-            std::cout << msg->get_topic() << ": " << msg->to_string() << std::endl;
-        }
+//             std::cout << msg->get_topic() << ": " << msg->to_string() << std::endl;
+//         }
 
-        client.disconnect();
-    }
-    catch (const mqtt::exception& exc) {
-        std::cerr << exc.what() << std::endl;
-        exit(EXIT_FAILURE);
-    }
-}
+//         client.disconnect();
+//     }
+//     catch (const mqtt::exception& exc) {
+//         std::cerr << exc.what() << std::endl;
+//         exit(EXIT_FAILURE);
+//     }
+// }
 
 // Create TCP socket with specific port and IP address.
 int initSocket(int port, std::string ip_addr) {
@@ -383,7 +386,7 @@ void runStitching() {
         if (timer)
             loop_start = std::chrono::high_resolution_clock::now();
 
-        stitched_cloud->clear();
+        if (clean) stitched_cloud->clear();
 
         if (timer)
             stitch_start = std::chrono::high_resolution_clock::now();
