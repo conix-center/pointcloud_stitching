@@ -57,6 +57,7 @@ bool fast = false;
 bool timer = false;
 bool save = false;
 bool visual = false;
+bool clean = true;
 int downsample = 1;
 int framecount = 0;
 int server_sockfd = 0;
