@@ -284,15 +284,15 @@ int copyPointCloudXYZRGBToBuffer(rs2::points& pts, const rs2::video_frame& color
 
 
         //Set cutoff range for pixel points, to lower data size, and omit outlying points
-        if (!v1.z) continue;
-        if (!v1.x) continue;
-        if (v1.z > 4) continue;
-        if (!(-2 < v1.x < 2)) continue;
+        // if (!v1.z) continue;
+        // if (!v1.x) continue;
+        // if (v1.z > 4) continue;
+        // if (!(-2 < v1.x < 2)) continue;
 
-        if (!v2.z) continue;
-        if (!v2.x) continue;
-        if (v2.z > 4) continue;
-        if (!(-2 < v2.x < 2)) continue;
+        // if (!v2.z) continue;
+        // if (!v2.x) continue;
+        // if (v2.z > 4) continue;
+        // if (!(-2 < v2.x < 2)) continue;
 
 
         // SIMD
