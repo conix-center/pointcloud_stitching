@@ -54,10 +54,17 @@ target_link_libraries(
     pcs-camera-optimized
     realsense2
     "${OpenMP_CXX_FLAGS}"
+    snappy
 )
 set_target_properties(pcs-camera-optimized PROPERTIES COMPILE_FLAGS "-mavx -mfma" )
 
-
+add_executable(pcs-multicamera-optimized pcs-multicamera-optimized.cpp)
+target_link_libraries(
+    pcs-multicamera-optimized
+    realsense2
+    ${PCL_LIBRARIES}
+    snappy
+)
 
 install(
     TARGETS

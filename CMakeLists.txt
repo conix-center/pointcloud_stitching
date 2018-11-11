@@ -23,4 +23,5 @@ elseif(COMPILER_SUPPORTS_CXX0X)
 endif()
 
 add_subdirectory(src)
+add_subdirectory(snappy)
 

@@ -24,7 +24,10 @@ RUN	apt-get update && \
 
 RUN	DEBIAN_FRONTEND=noninteractive apt-get install -y libpcl-dev
 
-RUN 
+RUN aria2c -x16 --summary-interval=1 "https://github.com/google/snappy/archive/1.1.7.tar.gz" && \
+	tar -xvf 1.1.7.tar.gz && \
+	mv snappy-1.1.7 snappy && \
+	rm 1.1.7.tar.gz
 
 #VOLUME /root
 
