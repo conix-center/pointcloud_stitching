@@ -1,5 +1,5 @@
 /*
- * Artur Balanuta
+ * Artur Balanuta, Evan Li
  * pcs-camera-optimized.cpp
  */
 
@@ -7,6 +7,7 @@
 #include <iostream>
 #include <chrono>
 
+#include <string>
 #include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -22,13 +23,26 @@
 #include <immintrin.h>
 #include <xmmintrin.h>
 
+#include "snappy.h"
+
 #define TIME_NOW    std::chrono::high_resolution_clock::now()
 #define BUF_SIZE    5000000
 #define CONV_RATE   1000.0
 #define DOWNSAMPLE  1
 #define PORT        8000
 
+struct point {
+    
+    // Coordenates
+    short x;
+    short y;
+    short z;
 
+    // Colors
+    char r;
+    char g;
+    char b; 
+};
 
 typedef std::chrono::high_resolution_clock clockTime;
 typedef std::chrono::duration<double, std::milli> timeMilli;
@@ -40,6 +54,7 @@ bool display_updates = false;
 bool send_buffer = false;
 bool cutoff = false;
 bool use_simd = false;
+bool compress = false;
 int num_of_threads = 1;
 int client_sock = 0;
 int sockfd = 0;
@@ -78,7 +93,7 @@ void initSocket(int port) {
     std::cout << "Established connection with client_sock: " << client_sock << std::endl;
 }
 
-void sendXYZRGBPointcloud(rs2::points pts, rs2::video_frame color, short * buffer);
+int sendXYZRGBPointcloud(rs2::points pts, rs2::video_frame color, short * buffer);
 
 // Exit gracefully by closing all open sockets and freeing buffer
 void sigintHandler(int dummy) {
@@ -93,7 +108,7 @@ void print_usage() {
 // Parse arguments for extra runtime options
 void parseArgs(int argc, char** argv) {
     int c;
-    while ((c = getopt(argc, argv, "hf:vst:cm")) != -1) {
+    while ((c = getopt(argc, argv, "hf:vst:cmz")) != -1) {
         switch(c) {
             case 'h':
                 print_usage();
@@ -115,6 +130,9 @@ void parseArgs(int argc, char** argv) {
                 break;
             case 'm':
                 use_simd = true;
+                break;
+            case 'z':
+                compress = true;
                 break;
         }
     }
@@ -145,10 +163,33 @@ int main (int argc, char** argv) {
     //auto resolution = std::make_pair(depth_stream.width(), depth_stream.height());
     //auto intr = depth_stream.get_intrinsics();
 
+    // rs2::pipeline pipe;
+    // pipe.start();
 
+    // const auto CAPACITY = 5; // allow max latency of 5 frames
+    // rs2::frame_queue queue(CAPACITY);
+    // std::thread t([&]() {
+    //     while (true)
+    //     {
+    //         rs2::depth_frame frame;
+    //         if (queue.poll_for_frame(&frame))
+    //         {
+    //             frame.get_data();
+    //             // Do processing on the frame
+    //         }
+    //     }
+    // });
+    // t.detach();
+
+    // while (true)
+    // {
+    //     auto frames = pipe.wait_for_frames();
+    //     queue.enqueue(frames.get_depth_frame());
+    // }
     //get_extrinsics(const rs2::stream_profile& from_stream, const rs2::stream_profile& to_stream)
 
     int i = 0, last_frame = 0;
+    int buff_size = 0, buff_size_sum = 0;
     double duration_sum = 0;
     short *buffer = (short *)malloc(sizeof(short) * BUF_SIZE);
     
@@ -182,13 +223,15 @@ int main (int argc, char** argv) {
             pc.map_to(color);       // 0.01ms vs 0.02ms  // Maps color values to a point in 3D space
             
             time_start = TIME_NOW;
-            sendXYZRGBPointcloud(pts, color, buffer);   // 86ms vs 9.7ms
+            buff_size = sendXYZRGBPointcloud(pts, color, buffer);   // 86ms vs 9.7ms
             time_end = TIME_NOW;
 
             std::cout << "Frame Time: " << timeMilli(time_end - time_start).count() \
                 << " ms " << "FPS: " << 1000.0 / timeMilli(time_end - time_start).count() \
-                << std::endl;
+                << "\t Buffer size: " << float(buff_size)/1000000 << " MBytes" << std::endl;
             duration_sum += timeMilli(time_end - time_start).count();
+            buff_size_sum += buff_size;
+
         }
     }
     
@@ -215,10 +258,23 @@ int main (int argc, char** argv) {
     std::cout << "### AVG Frame Time: " << duration_sum / i << " ms" << std::endl;
     std::cout << "### AVG FPS: " << 1000.0 / (duration_sum / i) << std::endl;
     
-    if (num_of_threads){
+    if (num_of_threads)
+    {
         std::cout << "### OpenMP Threads : " << num_of_threads   << std::endl;
-    }else{
+    }else
+    {
         std::cout << "### Running Serialized" << std::endl;
+    }
+
+    if (compress)
+    {
+        std::cout << "\n### Sending Compressed Stream" << std::endl;
+        std::cout << "### AVG Bytes/Frame: " << float(buff_size_sum) / (i*1000000) << " MBytes" << std::endl;
+        std::cout << "### AVG Compression Ratio " << float(buff_size_sum) / ( (pts.size()/100) * 5 * sizeof(short) * i) << " %" << std::endl;
+    }else
+    {
+        std::cout << "\n### AVG Bytes/Frame: " << float(buff_size_sum) / (i*1000000) << " MBytes" << std::endl;
+        std::cout << "### AVG Filter Compress Ratio " << float(buff_size_sum) / ( (pts.size()/100) * 5 * sizeof(short) * i) << " %" << std::endl;
     }
 
     return 0;
@@ -338,34 +394,60 @@ int copyPointCloudXYZRGBToBufferSIMD(rs2::points& pts, const rs2::video_frame& c
         _mm_storeu_si128((__m128i*)v_temp4, __v4); // store ints
 
         //v1
-        pc_buffer[i * 5 + 0] = short(v_temp1[3]);
-        pc_buffer[i * 5 + 1] = short(v_temp1[2]);
-        pc_buffer[i * 5 + 2] = short(v_temp1[1]);
-        pc_buffer[i * 5 + 3] = color_data[idx1] + (color_data[idx1 + 1] << 8);
-        pc_buffer[i * 5 + 4] = color_data[idx1 + 2];
-        
+        if (cutoff && \
+            (!vert[i].z) && \
+            (!vert[i].x) && \
+            (vert[i].z > 1.5) && \
+            !(-2 < vert[i].x < 2) ) {
+                
+            pc_buffer[i * 5 + 0] = short(v_temp1[3]);
+            pc_buffer[i * 5 + 1] = short(v_temp1[2]);
+            pc_buffer[i * 5 + 2] = short(v_temp1[1]);
+            pc_buffer[i * 5 + 3] = color_data[idx1] + (color_data[idx1 + 1] << 8);
+            pc_buffer[i * 5 + 4] = color_data[idx1 + 2];
+        }
         
         //v2
-        pc_buffer[i * 5 + 5] = short(v_temp2[3]);
-        pc_buffer[i * 5 + 6] = short(v_temp2[2]);
-        pc_buffer[i * 5 + 7] = short(v_temp2[1]);
-        pc_buffer[i * 5 + 8] = color_data[idx2] + (color_data[idx2 + 1] << 8);
-        pc_buffer[i * 5 + 9] = color_data[idx2 + 2];
+        if (cutoff && \
+            (!vert[i+1].z) && \
+            (!vert[i+1].x) && \
+            (vert[i+1].z > 1.5) && \
+            !(-2 < vert[i+1].x < 2) ) {
+                
+            pc_buffer[i * 5 + 5] = short(v_temp2[3]);
+            pc_buffer[i * 5 + 6] = short(v_temp2[2]);
+            pc_buffer[i * 5 + 7] = short(v_temp2[1]);
+            pc_buffer[i * 5 + 8] = color_data[idx2] + (color_data[idx2 + 1] << 8);
+            pc_buffer[i * 5 + 9] = color_data[idx2 + 2];
+        }
         
         //v3
-        pc_buffer[i * 5 + 5] = short(v_temp3[3]);
-        pc_buffer[i * 5 + 6] = short(v_temp3[2]);
-        pc_buffer[i * 5 + 7] = short(v_temp3[1]);
-        pc_buffer[i * 5 + 8] = color_data[idx3] + (color_data[idx3 + 1] << 8);
-        pc_buffer[i * 5 + 9] = color_data[idx3 + 2];
-        
-        //v4
-        pc_buffer[i * 5 + 5] = short(v_temp4[3]);
-        pc_buffer[i * 5 + 6] = short(v_temp4[2]);
-        pc_buffer[i * 5 + 7] = short(v_temp4[1]);
-        pc_buffer[i * 5 + 8] = color_data[idx4] + (color_data[idx4 + 1] << 8);
-        pc_buffer[i * 5 + 9] = color_data[idx4 + 2];
+        if (cutoff && \
+            (!vert[i+2].z) && \
+            (!vert[i+2].x) && \
+            (vert[i+2].z > 1.5) && \
+            !(-2 < vert[i+2].x < 2) ){
 
+            pc_buffer[i * 5 + 5] = short(v_temp3[3]);
+            pc_buffer[i * 5 + 6] = short(v_temp3[2]);
+            pc_buffer[i * 5 + 7] = short(v_temp3[1]);
+            pc_buffer[i * 5 + 8] = color_data[idx3] + (color_data[idx3 + 1] << 8);
+            pc_buffer[i * 5 + 9] = color_data[idx3 + 2];
+        }
+
+        //v4
+        if (cutoff && \
+            (!vert[i+3].z) && \
+            (!vert[i+3].x) && \
+            (vert[i+3].z > 1.5) && \
+            !(-2 < vert[i+3].x < 2) ){
+
+            pc_buffer[i * 5 + 5] = short(v_temp4[3]);
+            pc_buffer[i * 5 + 6] = short(v_temp4[2]);
+            pc_buffer[i * 5 + 7] = short(v_temp4[1]);
+            pc_buffer[i * 5 + 8] = color_data[idx4] + (color_data[idx4 + 1] << 8);
+            pc_buffer[i * 5 + 9] = color_data[idx4 + 2];
+        }
     }
     
     return pts_size;
@@ -417,20 +499,45 @@ int copyPointCloudXYZRGBToBuffer(rs2::points& pts, const rs2::video_frame& color
 
 }
 
-void sendXYZRGBPointcloud(rs2::points pts, rs2::video_frame color, short * buffer) {
+int sendXYZRGBPointcloud(rs2::points pts, rs2::video_frame color, short * buffer) {
     int size;
+    
+    // Clean Buffer
+    memset(buffer, 0, BUF_SIZE);
 
     if (use_simd)
     {
-        size = copyPointCloudXYZRGBToBufferSIMD(pts, color, &buffer[0] + sizeof(short));
+        size = copyPointCloudXYZRGBToBufferSIMD(pts, color, &buffer[0] + sizeof(int));
     }else
     {
-        size = copyPointCloudXYZRGBToBuffer(pts, color, &buffer[0] + sizeof(short));
+        size = copyPointCloudXYZRGBToBuffer(pts, color, &buffer[0] + sizeof(int));
     }
     
+    // Size in bytes of the payload
     size = 5 * size * sizeof(short);
-    memcpy(buffer, &size, sizeof(int));
-    memcpy(buffer, &size, sizeof(short));
+    
+    if (compress)
+    {
+        std::string comp_buff;
+        int comp_size = snappy::Compress((const char*)buffer, size, &comp_buff);
 
-    if (send_buffer) send(client_sock, (char *)buffer, size + sizeof(int), 0);
+        if (send_buffer)
+        {
+            // copy compressed buffer
+            memcpy(&buffer[0] + sizeof(int), (char *)&comp_size, comp_size);
+            size = comp_size;
+        }else
+        {
+            return comp_size;
+        }
+    }
+    
+    if (send_buffer)
+    {   
+        // Include the number of bytes in the payload
+        memcpy(buffer, &size, sizeof(int));
+        send(client_sock, (char *)buffer, size + sizeof(int), 0);
+    }
+    
+    return size;
 }
