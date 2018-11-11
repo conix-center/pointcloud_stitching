@@ -430,6 +430,7 @@ void sendXYZRGBPointcloud(rs2::points pts, rs2::video_frame color, short * buffe
     
     size = 5 * size * sizeof(short);
     memcpy(buffer, &size, sizeof(int));
+    memcpy(buffer, &size, sizeof(short));
 
     if (send_buffer) send(client_sock, (char *)buffer, size + sizeof(int), 0);
 }
