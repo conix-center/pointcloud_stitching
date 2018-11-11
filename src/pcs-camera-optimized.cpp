@@ -505,12 +505,14 @@ int sendXYZRGBPointcloud(rs2::points pts, rs2::video_frame color, short * buffer
     // Clean Buffer
     memset(buffer, 0, BUF_SIZE);
 
+    //TODO some issues with the buffer offset, on the receiver buff+short but size is int
+
     if (use_simd)
     {
-        size = copyPointCloudXYZRGBToBufferSIMD(pts, color, &buffer[0] + sizeof(int));
+        size = copyPointCloudXYZRGBToBufferSIMD(pts, color, &buffer[0] + sizeof(short));
     }else
     {
-        size = copyPointCloudXYZRGBToBuffer(pts, color, &buffer[0] + sizeof(int));
+        size = copyPointCloudXYZRGBToBuffer(pts, color, &buffer[0] + sizeof(short));
     }
     
     // Size in bytes of the payload
