@@ -1,4 +1,4 @@
-# Pointcloud Stitching for ARENA
+# Pointcloud Stitching for ARENA [![Build Status](https://travis-ci.com/ABalanuta/pointcloud_stitching.svg?branch=master)](https://travis-ci.com/ABalanuta/pointcloud_stitching)
 
 ## Overview
 Scalable, multicamera distributed system for realtime pointcloud stitching in the ARENA (Augmented Reality Environment ~~in something~~ Area/Arena). This program is currently designed to use the **D400 Series Intel RealSense** depth cameras. Using the [Librealsense 2.0 SDK](https://github.com/IntelRealSense/librealsense), depth frames are grabbed and pointclouds are computed on the edge, before sending the raw XYZRGB values to a central computer over a TCP socket. The central program stitches the pointclouds together and displays it a viewer using [PCL](http://pointclouds.org/) libraries.
@@ -37,3 +37,24 @@ Different steps of installation are required for installing the realsense camera
 
 ## Usage
 Each realsense is connected to an Intel i7 NUC, which are all accessible through ssh from the ALAN (central) computer. To start running, go through each ssh connection and run pcs-camera-server. If the servers are setup correctly, each one should say "Waiting for client...". Then on the ALAN computer, run "pcs-multicamera-client -v" to begin the pointcloud stitching (-v for visualizing the pointcloud). For more available options, run "pcs-multicamera-client -h" for help and an explanation of each option.
+
+
+## Sample files
+
+[Sample file used for testing](http://realsense-hw-public.s3.amazonaws.com/rs-tests/TestData/stairs.bag)
+
+
+# Docker
+
+## Usage
+Build image
+```
+sudo docker build . -t pcs
+```
+
+Run image
+```
+sudo docker run -it --rm pcs
+```
+Build Camera Server
+`mkdir build && cd build && cmake .. && make && make install`
