@@ -428,11 +428,11 @@ int copyPointCloudXYZRGBToBufferSIMD(rs2::points& pts, const rs2::video_frame& c
             (vert[i+2].z > 1.5) && \
             !(-2 < vert[i+2].x < 2) ){
 
-            pc_buffer[i * 5 + 5] = short(v_temp3[3]);
-            pc_buffer[i * 5 + 6] = short(v_temp3[2]);
-            pc_buffer[i * 5 + 7] = short(v_temp3[1]);
-            pc_buffer[i * 5 + 8] = color_data[idx3] + (color_data[idx3 + 1] << 8);
-            pc_buffer[i * 5 + 9] = color_data[idx3 + 2];
+            pc_buffer[i * 5 + 10] = short(v_temp3[3]);
+            pc_buffer[i * 5 + 11] = short(v_temp3[2]);
+            pc_buffer[i * 5 + 12] = short(v_temp3[1]);
+            pc_buffer[i * 5 + 13] = color_data[idx3] + (color_data[idx3 + 1] << 8);
+            pc_buffer[i * 5 + 14] = color_data[idx3 + 2];
         }
 
         //v4
@@ -442,11 +442,11 @@ int copyPointCloudXYZRGBToBufferSIMD(rs2::points& pts, const rs2::video_frame& c
             (vert[i+3].z > 1.5) && \
             !(-2 < vert[i+3].x < 2) ){
 
-            pc_buffer[i * 5 + 5] = short(v_temp4[3]);
-            pc_buffer[i * 5 + 6] = short(v_temp4[2]);
-            pc_buffer[i * 5 + 7] = short(v_temp4[1]);
-            pc_buffer[i * 5 + 8] = color_data[idx4] + (color_data[idx4 + 1] << 8);
-            pc_buffer[i * 5 + 9] = color_data[idx4 + 2];
+            pc_buffer[i * 5 + 15] = short(v_temp4[3]);
+            pc_buffer[i * 5 + 16] = short(v_temp4[2]);
+            pc_buffer[i * 5 + 17] = short(v_temp4[1]);
+            pc_buffer[i * 5 + 18] = color_data[idx4] + (color_data[idx4 + 1] << 8);
+            pc_buffer[i * 5 + 19] = color_data[idx4 + 2];
         }
     }
     
@@ -506,6 +506,17 @@ int sendXYZRGBPointcloud(rs2::points pts, rs2::video_frame color, short * buffer
     memset(buffer, 0, BUF_SIZE);
 
     //TODO some issues with the buffer offset, on the receiver buff+short but size is int
+
+    //TODO Try Zstandard v1.3.7 vs Snappy
+
+    //TODO Investigate https://github.com/IntelRealSense/librealsense/wiki/API-Changes#from-2161-to-2162
+    // rs2_project_color_pixel_to_depth_pixel - map pixel in the color image to pixel in depth image
+    
+    // TODO rs2_create_hole_filling_filter_block - Hole-Filling filter supports three modes of operation:
+
+    // TODO rs2_create_temporal_filter_block - Temporal filter that rectifies depth values based on previously-available frames.
+
+    // TODO Investigate https://github.com/IntelRealSense/librealsense/wiki/API-Changes#from-2161-to-2162
 
     if (use_simd)
     {
