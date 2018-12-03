@@ -23,7 +23,7 @@
 #include <immintrin.h>
 #include <xmmintrin.h>
 
-#include "snappy.h"
+// #include "snappy.h"
 
 #define TIME_NOW    std::chrono::high_resolution_clock::now()
 #define BUF_SIZE    5000000
@@ -59,6 +59,16 @@ int num_of_threads = 1;
 int client_sock = 0;
 int sockfd = 0;
 timestamp time_start, time_end;
+
+float tf_mat[] =   {-0.99977970,  0.00926272,  0.01883480,  0.00000000,
+                    -0.01638983,  0.21604544, -0.97624574,  3.41600000,
+                    -0.01311186, -0.97633937, -0.21584603,  1.80200000,
+                     0.00000000,  0.00000000,  0.00000000,  1.00000000};
+                 
+__m128 ss_a = _mm_set_ps(0, tf_mat[8], tf_mat[4], tf_mat[0]);
+__m128 ss_b = _mm_set_ps(0, tf_mat[9], tf_mat[5], tf_mat[1]);
+__m128 ss_c = _mm_set_ps(0, tf_mat[10], tf_mat[6], tf_mat[2]);
+__m128 ss_d = _mm_set_ps(0, tf_mat[11], tf_mat[7], tf_mat[3]);
 
 // Creates TCP stream socket and connects to the central computer.
 void initSocket(int port) {
@@ -314,6 +324,10 @@ int copyPointCloudXYZRGBToBufferSIMD(rs2::points& pts, const rs2::video_frame& c
     const __m128 _zero_f = _mm_setzero_ps();
     const __m128 _w = _mm_broadcast_ss(&w_f);
     const __m128 _h = _mm_broadcast_ss(&h_f);
+    const __m128 z_lo = _mm_set_ps1(0);
+    const __m128 z_hi = _mm_set_ps1(1.5);
+    const __m128 x_lo = _mm_set_ps1(-2);
+    const __m128 x_hi = _mm_set_ps1(2);
 
     // integ
     const __m128i _zero = _mm_setzero_si128();
@@ -321,28 +335,21 @@ int copyPointCloudXYZRGBToBufferSIMD(rs2::points& pts, const rs2::video_frame& c
     const __m128i _h_min = _mm_set1_epi32(h_min);
     const __m128i _cl_bp = _mm_set1_epi32(cl_bp);
     const __m128i _cl_sb = _mm_set1_epi32(cl_sb);
-    
+
+    int count = 0;
     
     #pragma omp parallel for schedule(static, 10000) num_threads(num_of_threads)
     for (int i = 0; i < pts_size; i += 4) {
-        
-        if (cutoff)
-        {
-            if (!vert[i].z) continue;
-            if (!vert[i].x) continue;
-            if (vert[i].z > 1.5) continue;
-            if (!(-2 < vert[i].x < 2)) continue;
-        }
 
         int i1 = i;
         int i2 = i+1;
         int i3 = i+2;
         int i4 = i+3;
 
-        __attribute__((aligned(16))) int v_temp1[4];
-        __attribute__((aligned(16))) int v_temp2[4];
-        __attribute__((aligned(16))) int v_temp3[4];
-        __attribute__((aligned(16))) int v_temp4[4];
+        __attribute__((aligned(16))) float v_temp1[4];
+        __attribute__((aligned(16))) float v_temp2[4];
+        __attribute__((aligned(16))) float v_temp3[4];
+        __attribute__((aligned(16))) float v_temp4[4];
 
         __attribute__((aligned(16))) int idx[4];
         __attribute__((aligned(16))) int idy[4];
@@ -372,84 +379,153 @@ int copyPointCloudXYZRGBToBufferSIMD(rs2::points& pts, const rs2::video_frame& c
         int idx3 = idx[1]*cl_bp + idy[1]*cl_sb;
         int idx4 = idx[0]*cl_bp + idy[0]*cl_sb;
 
+        // Point Transformation using SIMD instructions for Matrix Multiplication on xyz points
+        __m128 ss_x1 = _mm_broadcast_ss(&vert[i].x);
+        __m128 ss_y1 = _mm_broadcast_ss(&vert[i].y);
+        __m128 ss_z1 = _mm_broadcast_ss(&vert[i].z);
 
-        __m128 _v1 = _mm_set_ps(vert[i1].x, vert[i1].y, vert[i1].z, 0); // load v
-        __m128 _v2 = _mm_set_ps(vert[i2].x, vert[i2].y, vert[i2].z, 0); // load v
-        __m128 _v3 = _mm_set_ps(vert[i3].x, vert[i3].y, vert[i3].z, 0); // load v
-        __m128 _v4 = _mm_set_ps(vert[i4].x, vert[i4].y, vert[i4].z, 0); // load v
+        __m128 ss_x2 = _mm_broadcast_ss(&vert[i2].x);
+        __m128 ss_y2 = _mm_broadcast_ss(&vert[i2].y);
+        __m128 ss_z2 = _mm_broadcast_ss(&vert[i2].z);
 
+        __m128 ss_x3 = _mm_broadcast_ss(&vert[i3].x);
+        __m128 ss_y3 = _mm_broadcast_ss(&vert[i3].y);
+        __m128 ss_z3 = _mm_broadcast_ss(&vert[i3].z);
+
+        __m128 ss_x4 = _mm_broadcast_ss(&vert[i4].x);
+        __m128 ss_y4 = _mm_broadcast_ss(&vert[i4].y);
+        __m128 ss_z4 = _mm_broadcast_ss(&vert[i4].z);
+
+        __m128 _v1 = _mm_fmadd_ps(ss_x1, ss_a, ss_d);
+        _v1 = _mm_fmadd_ps(ss_y1, ss_b, _v1);
+        _v1 = _mm_fmadd_ps(ss_z1, ss_c, _v1);
+
+        __m128 _v2 = _mm_fmadd_ps(ss_x2, ss_a, ss_d);
+        _v2 = _mm_fmadd_ps(ss_y2, ss_b, _v2);
+        _v2 = _mm_fmadd_ps(ss_z2, ss_c, _v2);
+
+        __m128 _v3 = _mm_fmadd_ps(ss_x3, ss_a, ss_d);
+        _v3 = _mm_fmadd_ps(ss_y3, ss_b, _v3);
+        _v3 = _mm_fmadd_ps(ss_z3, ss_c, _v3);
+
+        __m128 _v4 = _mm_fmadd_ps(ss_x4, ss_a, ss_d);
+        _v4 = _mm_fmadd_ps(ss_y4, ss_b, _v4);
+        _v4 = _mm_fmadd_ps(ss_z4, ss_c, _v4);
+
+        // SIMD multiply by conversion rate to be converted from floats to shorts later
         _v1 = _mm_mul_ps(_v1, _conv_rate); // multiply with _conv_rate
         _v2 = _mm_mul_ps(_v2, _conv_rate); // multiply with _conv_rate
         _v3 = _mm_mul_ps(_v3, _conv_rate); // multiply with _conv_rate
         _v4 = _mm_mul_ps(_v4, _conv_rate); // multiply with _conv_rate
-        
-        __m128i __v1 = _mm_cvttps_epi32(_v1); // floats to ints
-        __m128i __v2 = _mm_cvttps_epi32(_v2); // floats to ints
-        __m128i __v3 = _mm_cvttps_epi32(_v3); // floats to ints
-        __m128i __v4 = _mm_cvttps_epi32(_v4); // floats to ints
-        
-        _mm_storeu_si128((__m128i*)v_temp1, __v1); // store ints
-        _mm_storeu_si128((__m128i*)v_temp2, __v2); // store ints
-        _mm_storeu_si128((__m128i*)v_temp3, __v3); // store ints
-        _mm_storeu_si128((__m128i*)v_temp4, __v4); // store ints
 
-        //v1
-        if (cutoff && \
-            (!vert[i].z) && \
-            (!vert[i].x) && \
-            (vert[i].z > 1.5) && \
-            !(-2 < vert[i].x < 2) ) {
-                
-            pc_buffer[i * 5 + 0] = short(v_temp1[3]);
-            pc_buffer[i * 5 + 1] = short(v_temp1[2]);
-            pc_buffer[i * 5 + 2] = short(v_temp1[1]);
+        // Store SIMD Vectors into memory (arrays) 
+        _mm_store_ps(v_temp1, _v1);
+        _mm_store_ps(v_temp2, _v2);
+        _mm_store_ps(v_temp3, _v3);
+        _mm_store_ps(v_temp4, _v4);
+
+        if (cutoff) {
+            // Check if x and z points are within range
+            __m128 z_pts = _mm_set_ps(vert[i].z, vert[i2].z, vert[i3].z, vert[i4].z);
+            __m128 x_pts = _mm_set_ps(vert[i].x, vert[i2].x, vert[i3].x, vert[i4].x);
+
+            __m128 z_gt_lo = _mm_cmpgt_ps(z_pts, z_lo);
+            __m128 z_le_hi = _mm_cmple_ps(z_pts, z_hi);
+            __m128 x_gt_lo = _mm_cmpgt_ps(x_pts, x_lo);
+            __m128 x_le_hi = _mm_cmple_ps(x_pts, x_hi);
+
+            __m128 z_mask = _mm_and_ps(z_gt_lo, z_le_hi);
+            __m128 x_mask = _mm_and_ps(x_gt_lo, x_le_hi);
+            __m128 pt_mask = _mm_and_ps(z_mask, x_mask);
+
+            float pt_mask_f[4];
+            _mm_store_ps(pt_mask_f, pt_mask);
+
+            //v1
+            if (pt_mask_f[0] != 0) {
+                pc_buffer[count * 5 + 0] = short(v_temp1[0]);
+                pc_buffer[count * 5 + 1] = short(v_temp1[1]);
+                pc_buffer[count * 5 + 2] = short(v_temp1[2]);
+                pc_buffer[count * 5 + 3] = color_data[idx1] + (color_data[idx1 + 1] << 8);
+                pc_buffer[count * 5 + 4] = color_data[idx1 + 2];
+
+                count++;
+
+                // printf("%.2f,%.2f = %f\n", vert[i].z, vert[i].x, pt_mask_f[0]);
+            }
+            
+            //v2
+            if (pt_mask_f[1] != 0) {
+                pc_buffer[count * 5 + 0] = short(v_temp2[0]);
+                pc_buffer[count * 5 + 1] = short(v_temp2[1]);
+                pc_buffer[count * 5 + 2] = short(v_temp2[2]);
+                pc_buffer[count * 5 + 3] = color_data[idx2] + (color_data[idx2 + 1] << 8);
+                pc_buffer[count * 5 + 4] = color_data[idx2 + 2];
+
+                count++;
+
+                // printf("%.2f,%.2f = %f\n", vert[i2].z, vert[i2].x, pt_mask_f[1]);
+            }
+            
+            //v3
+            if (pt_mask_f[2] != 0) {
+                pc_buffer[count * 5 + 0] = short(v_temp3[0]);
+                pc_buffer[count * 5 + 1] = short(v_temp3[1]);
+                pc_buffer[count * 5 + 2] = short(v_temp3[2]);
+                pc_buffer[count * 5 + 3] = color_data[idx3] + (color_data[idx3 + 1] << 8);
+                pc_buffer[count * 5 + 4] = color_data[idx3 + 2];
+
+                count++;
+
+                // printf("%.2f,%.2f = %f\n", vert[i3].z, vert[i3].x, pt_mask_f[2]);
+            }
+
+            //v4
+            if (pt_mask_f[3] != 0) {
+                pc_buffer[count * 5 + 0] = short(v_temp4[0]);
+                pc_buffer[count * 5 + 1] = short(v_temp4[1]);
+                pc_buffer[count * 5 + 2] = short(v_temp4[2]);
+                pc_buffer[count * 5 + 3] = color_data[idx4] + (color_data[idx4 + 1] << 8);
+                pc_buffer[count * 5 + 4] = color_data[idx4 + 2];
+
+                count++;
+
+                // printf("%.2f,%.2f = %f\n", vert[i4].z, vert[i4].x, pt_mask_f[3]);
+            }
+        }
+        else {
+            //v1
+            pc_buffer[i * 5 + 0] = short(v_temp1[0]);
+            pc_buffer[i * 5 + 1] = short(v_temp1[1]);
+            pc_buffer[i * 5 + 2] = short(v_temp1[2]);
             pc_buffer[i * 5 + 3] = color_data[idx1] + (color_data[idx1 + 1] << 8);
             pc_buffer[i * 5 + 4] = color_data[idx1 + 2];
-        }
-        
-        //v2
-        if (cutoff && \
-            (!vert[i+1].z) && \
-            (!vert[i+1].x) && \
-            (vert[i+1].z > 1.5) && \
-            !(-2 < vert[i+1].x < 2) ) {
-                
-            pc_buffer[i * 5 + 5] = short(v_temp2[3]);
-            pc_buffer[i * 5 + 6] = short(v_temp2[2]);
-            pc_buffer[i * 5 + 7] = short(v_temp2[1]);
+            
+            //v2
+            pc_buffer[i * 5 + 5] = short(v_temp2[0]);
+            pc_buffer[i * 5 + 6] = short(v_temp2[1]);
+            pc_buffer[i * 5 + 7] = short(v_temp2[2]);
             pc_buffer[i * 5 + 8] = color_data[idx2] + (color_data[idx2 + 1] << 8);
             pc_buffer[i * 5 + 9] = color_data[idx2 + 2];
-        }
-        
-        //v3
-        if (cutoff && \
-            (!vert[i+2].z) && \
-            (!vert[i+2].x) && \
-            (vert[i+2].z > 1.5) && \
-            !(-2 < vert[i+2].x < 2) ){
-
-            pc_buffer[i * 5 + 5] = short(v_temp3[3]);
-            pc_buffer[i * 5 + 6] = short(v_temp3[2]);
-            pc_buffer[i * 5 + 7] = short(v_temp3[1]);
-            pc_buffer[i * 5 + 8] = color_data[idx3] + (color_data[idx3 + 1] << 8);
-            pc_buffer[i * 5 + 9] = color_data[idx3 + 2];
-        }
-
-        //v4
-        if (cutoff && \
-            (!vert[i+3].z) && \
-            (!vert[i+3].x) && \
-            (vert[i+3].z > 1.5) && \
-            !(-2 < vert[i+3].x < 2) ){
-
-            pc_buffer[i * 5 + 5] = short(v_temp4[3]);
-            pc_buffer[i * 5 + 6] = short(v_temp4[2]);
-            pc_buffer[i * 5 + 7] = short(v_temp4[1]);
-            pc_buffer[i * 5 + 8] = color_data[idx4] + (color_data[idx4 + 1] << 8);
-            pc_buffer[i * 5 + 9] = color_data[idx4 + 2];
+            
+            //v3
+            pc_buffer[i * 5 + 10] = short(v_temp3[0]);
+            pc_buffer[i * 5 + 11] = short(v_temp3[1]);
+            pc_buffer[i * 5 + 12] = short(v_temp3[2]);
+            pc_buffer[i * 5 + 13] = color_data[idx3] + (color_data[idx3 + 1] << 8);
+            pc_buffer[i * 5 + 14] = color_data[idx3 + 2];
+            
+            //v4
+            pc_buffer[i * 5 + 15] = short(v_temp4[0]);
+            pc_buffer[i * 5 + 16] = short(v_temp4[1]);
+            pc_buffer[i * 5 + 17] = short(v_temp4[2]);
+            pc_buffer[i * 5 + 18] = color_data[idx4] + (color_data[idx4 + 1] << 8);
+            pc_buffer[i * 5 + 19] = color_data[idx4 + 2];
         }
     }
     
+    if (cutoff)
+        return count;
     return pts_size;
 }
 
@@ -518,21 +594,21 @@ int sendXYZRGBPointcloud(rs2::points pts, rs2::video_frame color, short * buffer
     // Size in bytes of the payload
     size = 5 * size * sizeof(short);
     
-    if (compress)
-    {
-        std::string comp_buff;
-        int comp_size = snappy::Compress((const char*)buffer, size, &comp_buff);
+    // if (compress)
+    // {
+    //     std::string comp_buff;
+    //     int comp_size = snappy::Compress((const char*)buffer, size, &comp_buff);
 
-        if (send_buffer)
-        {
-            // copy compressed buffer
-            memcpy(&buffer[0] + sizeof(int), (char *)&comp_size, comp_size);
-            size = comp_size;
-        }else
-        {
-            return comp_size;
-        }
-    }
+    //     if (send_buffer)
+    //     {
+    //         // copy compressed buffer
+    //         memcpy(&buffer[0] + sizeof(int), (char *)&comp_size, comp_size);
+    //         size = comp_size;
+    //     }else
+    //     {
+    //         return comp_size;
+    //     }
+    // }
     
     if (send_buffer)
     {   
