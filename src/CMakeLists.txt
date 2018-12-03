@@ -23,11 +23,11 @@ link_directories(${PCL_LIBRARY_DIRS})
 add_definitions(${PCL_DEFINITIONS})
 
 
-add_executable(pcs-camera-server pcs-camera-server.cpp)
-target_link_libraries(
-    pcs-camera-server
-    realsense2
-)
+# add_executable(pcs-camera-server pcs-camera-server.cpp)
+# target_link_libraries(
+#     pcs-camera-server
+#     realsense2
+# )
 
 add_executable(pcs-multicamera-client pcs-multicamera-client.cpp)
 target_link_libraries(
@@ -68,7 +68,7 @@ target_link_libraries(
 install(
     TARGETS
 
-    pcs-camera-server
+    # pcs-camera-server
     pcs-multicamera-client
 
     pcs-camera-grab-frames

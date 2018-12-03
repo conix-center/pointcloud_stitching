@@ -23,7 +23,7 @@
 #include <immintrin.h>
 #include <xmmintrin.h>
 
-// #include "snappy.h"
+#include "snappy.h"
 
 #define TIME_NOW    std::chrono::high_resolution_clock::now()
 #define BUF_SIZE    5000000
@@ -58,6 +58,9 @@ bool compress = false;
 int num_of_threads = 1;
 int client_sock = 0;
 int sockfd = 0;
+
+short *thread_buffers[16];
+
 timestamp time_start, time_end;
 
 float tf_mat[] =   {-0.99977970,  0.00926272,  0.01883480,  0.00000000,
@@ -203,6 +206,10 @@ int main (int argc, char** argv) {
     double duration_sum = 0;
     short *buffer = (short *)malloc(sizeof(short) * BUF_SIZE);
     
+    for (int i = 0; i < num_of_threads; i++){
+        thread_buffers[i] = (short *)malloc(sizeof(short) * (BUF_SIZE/num_of_threads + 100));
+    }
+
     rs2::frameset frames;
 
     if (send_buffer) initSocket(PORT);
@@ -290,57 +297,74 @@ int main (int argc, char** argv) {
     return 0;
 }
 
+bool initialized = false;
+int pts_size;
+int w, h, cl_bp, cl_sb, w_min, h_min;
+
+// TODO CLEAN
+float conv_rate, point5f, w_f, h_f, h_min_f, cl_bp_f, cl_sb_f;
+
+// Float
+__m128 _conv_rate, _cl_bp_f, _cl_sb_f, _f5, _w, _h, z_lo, z_hi, x_lo, x_hi;
+
+// integ
+__m128i _zero, _w_min, _h_min, _cl_bp, _cl_sb;
+
+
 int copyPointCloudXYZRGBToBufferSIMD(rs2::points& pts, const rs2::video_frame& color, short * pc_buffer)
 {
     const auto vert = pts.get_vertices();
     const rs2::texture_coordinate* tcrd = pts.get_texture_coordinates();
     const uint8_t* color_data = reinterpret_cast<const uint8_t*>(color.get_data());
 
-    const int pts_size = pts.size();
-    const int w = color.get_width();
-    const int h = color.get_height();
-    const int cl_bp = color.get_bytes_per_pixel();
-    const int cl_sb = color.get_stride_in_bytes();
-    const int w_min = (w - 1);
-    const int h_min = (h - 1);
+    if (!initialized){
+        initialized = true;
+        pts_size = pts.size();
+        w = color.get_width();
+        h = color.get_height();
+        cl_bp = color.get_bytes_per_pixel();
+        cl_sb = color.get_stride_in_bytes();
+        w_min = (w - 1);
+        h_min = (h - 1);
 
-    // TODO CLEAN
-    const float conv_rate = CONV_RATE;
-    const float point5f = .5f;
-    const float w_f = float(w);
-    const float h_f = float(h);
-    const float w_min_f = float(w_min);
-    const float h_min_f = float(h_min);
-    const float cl_bp_f = float(color.get_bytes_per_pixel());
-    const float cl_sb_f = float(color.get_stride_in_bytes());
+        // TODO CLEAN
+        conv_rate = CONV_RATE;
+        point5f = .5f;
+        w_f = float(w);
+        h_f = float(h);
+        //w_min_f = float(w_min);
+        //h_min_f = float(h_min);
+        cl_bp_f = float(cl_bp);
+        cl_sb_f = float(cl_sb);
 
-    // Float
-    const __m128 _conv_rate = _mm_broadcast_ss(&conv_rate);
-    const __m128 _cl_bp_f = _mm_broadcast_ss(&cl_bp_f);
-    const __m128 _cl_sb_f = _mm_broadcast_ss(&cl_sb_f);
-    const __m128 _w_min_f = _mm_broadcast_ss(&w_min_f);
-    const __m128 _h_min_f = _mm_broadcast_ss(&h_min_f);
-    const __m128 _f5 = _mm_broadcast_ss(&point5f);
-    const __m128 _zero_f = _mm_setzero_ps();
-    const __m128 _w = _mm_broadcast_ss(&w_f);
-    const __m128 _h = _mm_broadcast_ss(&h_f);
-    const __m128 z_lo = _mm_set_ps1(0);
-    const __m128 z_hi = _mm_set_ps1(1.5);
-    const __m128 x_lo = _mm_set_ps1(-2);
-    const __m128 x_hi = _mm_set_ps1(2);
+        // Float
+        _conv_rate = _mm_broadcast_ss(&conv_rate);
+        _cl_bp_f = _mm_broadcast_ss(&cl_bp_f);
+        _cl_sb_f = _mm_broadcast_ss(&cl_sb_f);
+        //_h_min_f = _mm_broadcast_ss(&h_min_f);
+        _f5 = _mm_broadcast_ss(&point5f);
+        
+        _w = _mm_broadcast_ss(&w_f);
+        _h = _mm_broadcast_ss(&h_f);
+        z_lo = _mm_set_ps1(0);
+        z_hi = _mm_set_ps1(1.5);
+        x_lo = _mm_set_ps1(-2);
+        x_hi = _mm_set_ps1(2);
 
-    // integ
-    const __m128i _zero = _mm_setzero_si128();
-    const __m128i _w_min = _mm_set1_epi32(w_min);
-    const __m128i _h_min = _mm_set1_epi32(h_min);
-    const __m128i _cl_bp = _mm_set1_epi32(cl_bp);
-    const __m128i _cl_sb = _mm_set1_epi32(cl_sb);
-
-    int count = 0;
+        // integ
+        _zero = _mm_setzero_si128();
+        _w_min = _mm_set1_epi32(w_min);
+        _h_min = _mm_set1_epi32(h_min);
+        _cl_bp = _mm_set1_epi32(cl_bp);
+        const __m128i _cl_sb = _mm_set1_epi32(cl_sb);
+    }
     
-    #pragma omp parallel for schedule(static, 10000) num_threads(num_of_threads)
+    int global_count = 0;
+    
+    #pragma omp parallel for ordered schedule(static, 10000) num_threads(num_of_threads)
     for (int i = 0; i < pts_size; i += 4) {
-
+            //unsigned int id = omp_get_thread_num();
+        
         int i1 = i;
         int i2 = i+1;
         int i3 = i+2;
@@ -358,7 +382,6 @@ int copyPointCloudXYZRGBToBufferSIMD(rs2::points& pts, const rs2::video_frame& c
         __m128 _x = _mm_set_ps(tcrd[i1].u, tcrd[i2].u, tcrd[i3].u, tcrd[i4].u); // load u
         __m128 _y = _mm_set_ps(tcrd[i1].v, tcrd[i2].v, tcrd[i3].v, tcrd[i4].v); // load v
 
-        
         _x = _mm_fmadd_ps(_x, _w, _f5); // fma
         _y = _mm_fmadd_ps(_y, _h, _f5);
 
@@ -441,58 +464,69 @@ int copyPointCloudXYZRGBToBufferSIMD(rs2::points& pts, const rs2::video_frame& c
             float pt_mask_f[4];
             _mm_store_ps(pt_mask_f, pt_mask);
 
+            long count = -1;
+
             //v1
             if (pt_mask_f[0] != 0) {
+
+                #pragma omp atomic capture
+                count = global_count++;
+
                 pc_buffer[count * 5 + 0] = short(v_temp1[0]);
                 pc_buffer[count * 5 + 1] = short(v_temp1[1]);
                 pc_buffer[count * 5 + 2] = short(v_temp1[2]);
                 pc_buffer[count * 5 + 3] = color_data[idx1] + (color_data[idx1 + 1] << 8);
                 pc_buffer[count * 5 + 4] = color_data[idx1 + 2];
 
-                count++;
-
                 // printf("%.2f,%.2f = %f\n", vert[i].z, vert[i].x, pt_mask_f[0]);
             }
             
             //v2
             if (pt_mask_f[1] != 0) {
+                
+                #pragma omp atomic capture
+                count = global_count++;
+
                 pc_buffer[count * 5 + 0] = short(v_temp2[0]);
                 pc_buffer[count * 5 + 1] = short(v_temp2[1]);
                 pc_buffer[count * 5 + 2] = short(v_temp2[2]);
                 pc_buffer[count * 5 + 3] = color_data[idx2] + (color_data[idx2 + 1] << 8);
                 pc_buffer[count * 5 + 4] = color_data[idx2 + 2];
 
-                count++;
-
                 // printf("%.2f,%.2f = %f\n", vert[i2].z, vert[i2].x, pt_mask_f[1]);
             }
             
             //v3
             if (pt_mask_f[2] != 0) {
+                
+                #pragma omp atomic capture
+                count = global_count++;
+                
                 pc_buffer[count * 5 + 0] = short(v_temp3[0]);
                 pc_buffer[count * 5 + 1] = short(v_temp3[1]);
                 pc_buffer[count * 5 + 2] = short(v_temp3[2]);
                 pc_buffer[count * 5 + 3] = color_data[idx3] + (color_data[idx3 + 1] << 8);
                 pc_buffer[count * 5 + 4] = color_data[idx3 + 2];
 
-                count++;
-
                 // printf("%.2f,%.2f = %f\n", vert[i3].z, vert[i3].x, pt_mask_f[2]);
             }
 
             //v4
             if (pt_mask_f[3] != 0) {
+                
+                #pragma omp atomic capture
+                count = global_count++;
+
                 pc_buffer[count * 5 + 0] = short(v_temp4[0]);
                 pc_buffer[count * 5 + 1] = short(v_temp4[1]);
                 pc_buffer[count * 5 + 2] = short(v_temp4[2]);
                 pc_buffer[count * 5 + 3] = color_data[idx4] + (color_data[idx4 + 1] << 8);
                 pc_buffer[count * 5 + 4] = color_data[idx4 + 2];
 
-                count++;
-
                 // printf("%.2f,%.2f = %f\n", vert[i4].z, vert[i4].x, pt_mask_f[3]);
             }
         }
+
         else {
             //v1
             pc_buffer[i * 5 + 0] = short(v_temp1[0]);
@@ -522,10 +556,13 @@ int copyPointCloudXYZRGBToBufferSIMD(rs2::points& pts, const rs2::video_frame& c
             pc_buffer[i * 5 + 18] = color_data[idx4] + (color_data[idx4 + 1] << 8);
             pc_buffer[i * 5 + 19] = color_data[idx4 + 2];
         }
-    }
+    
+}
+    
     
     if (cutoff)
-        return count;
+        return global_count;
+
     return pts_size;
 }
 
@@ -563,10 +600,15 @@ int copyPointCloudXYZRGBToBuffer(rs2::points& pts, const rs2::video_frame& color
         int y = std::min(std::max(int(tex_coords[i].v*h + .5f), 0), h_min);
         
         int idx = x * cl_bp + y * cl_sb;
+
+        // Might be wrong
+        float x_p = tf_mat[0] * vertices[i].x + tf_mat[1] * vertices[i].y + tf_mat[2] * vertices[i].z + tf_mat[3];
+        float y_p = tf_mat[4] * vertices[i].x + tf_mat[5] * vertices[i].y + tf_mat[6] * vertices[i].z + tf_mat[7];
+        float z_p = tf_mat[8] * vertices[i].x + tf_mat[9] * vertices[i].y + tf_mat[10] * vertices[i].z + tf_mat[11];
         
-        pc_buffer[i * 5    ] = static_cast<short>(vertices[i].x * CONV_RATE);
-        pc_buffer[i * 5 + 1] = static_cast<short>(vertices[i].y * CONV_RATE);
-        pc_buffer[i * 5 + 2] = static_cast<short>(vertices[i].z * CONV_RATE);
+        pc_buffer[i * 5    ] = static_cast<short>(x_p * CONV_RATE);
+        pc_buffer[i * 5 + 1] = static_cast<short>(y_p * CONV_RATE);
+        pc_buffer[i * 5 + 2] = static_cast<short>(z_p * CONV_RATE);
         pc_buffer[i * 5 + 3] = color_data[idx] + (color_data[idx + 1] << 8);
         pc_buffer[i * 5 + 4] = color_data[idx + 2];
     }
@@ -605,21 +647,21 @@ int sendXYZRGBPointcloud(rs2::points pts, rs2::video_frame color, short * buffer
     // Size in bytes of the payload
     size = 5 * size * sizeof(short);
     
-    // if (compress)
-    // {
-    //     std::string comp_buff;
-    //     int comp_size = snappy::Compress((const char*)buffer, size, &comp_buff);
+    if (compress)
+    {
+        std::string comp_buff;
+        int comp_size = snappy::Compress((const char*)buffer, size, &comp_buff);
 
-    //     if (send_buffer)
-    //     {
-    //         // copy compressed buffer
-    //         memcpy(&buffer[0] + sizeof(int), (char *)&comp_size, comp_size);
-    //         size = comp_size;
-    //     }else
-    //     {
-    //         return comp_size;
-    //     }
-    // }
+        if (send_buffer)
+        {
+            // copy compressed buffer
+            memcpy(&buffer[0] + sizeof(int), (char *)&comp_size, comp_size);
+            size = comp_size;
+        }else
+        {
+            return comp_size;
+        }
+    }
     
     if (send_buffer)
     {   

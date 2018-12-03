@@ -6,7 +6,7 @@ project(Point_Cloud_Stitching)
 # Save the command line compile commands in the build output
 set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
 
-#set(CMAKE_CXX_FLAGS_RELEASE "-O0")
+set(CMAKE_CXX_FLAGS_RELEASE "-O2")
 
 option(BUILD_CLIENT "Build the central computing client" OFF)
 
