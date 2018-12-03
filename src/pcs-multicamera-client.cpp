@@ -451,15 +451,9 @@ void visualize() {
     // Loop until the visualizer is stopped
     while (!viewer.wasStopped()) {
         if (timer)
-<<<<<<< HEAD
             stitch_start = std::chrono::high_resolution_clock::now();
    
         stitched_cloud->clear();
-=======
-            loop_start = std::chrono::high_resolution_clock::now();
-
-        if (clean) stitched_cloud->clear();
->>>>>>> 9c19cce39cce2c5266e6abd4b72fdab65319b5b2
 
         // Spawn a thread for each camera and update pointcloud, and perform transformation, 
         for (int i = 0; i < NUM_CAMERAS; i++) {

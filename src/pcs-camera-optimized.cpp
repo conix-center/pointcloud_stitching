@@ -507,7 +507,6 @@ int copyPointCloudXYZRGBToBufferSIMD(rs2::points& pts, const rs2::video_frame& c
             pc_buffer[i * 5 + 7] = short(v_temp2[2]);
             pc_buffer[i * 5 + 8] = color_data[idx2] + (color_data[idx2 + 1] << 8);
             pc_buffer[i * 5 + 9] = color_data[idx2 + 2];
-//<<<<<<< HEAD
             
             //v3
             pc_buffer[i * 5 + 10] = short(v_temp3[0]);
@@ -520,34 +519,6 @@ int copyPointCloudXYZRGBToBufferSIMD(rs2::points& pts, const rs2::video_frame& c
             pc_buffer[i * 5 + 15] = short(v_temp4[0]);
             pc_buffer[i * 5 + 16] = short(v_temp4[1]);
             pc_buffer[i * 5 + 17] = short(v_temp4[2]);
-//=======
-        }
-        
-        //v3
-        if (cutoff && \
-            (!vert[i+2].z) && \
-            (!vert[i+2].x) && \
-            (vert[i+2].z > 1.5) && \
-            !(-2 < vert[i+2].x < 2) ){
-
-            pc_buffer[i * 5 + 10] = short(v_temp3[3]);
-            pc_buffer[i * 5 + 11] = short(v_temp3[2]);
-            pc_buffer[i * 5 + 12] = short(v_temp3[1]);
-            pc_buffer[i * 5 + 13] = color_data[idx3] + (color_data[idx3 + 1] << 8);
-            pc_buffer[i * 5 + 14] = color_data[idx3 + 2];
-        }
-
-        //v4
-        if (cutoff && \
-            (!vert[i+3].z) && \
-            (!vert[i+3].x) && \
-            (vert[i+3].z > 1.5) && \
-            !(-2 < vert[i+3].x < 2) ){
-
-            pc_buffer[i * 5 + 15] = short(v_temp4[3]);
-            pc_buffer[i * 5 + 16] = short(v_temp4[2]);
-            pc_buffer[i * 5 + 17] = short(v_temp4[1]);
-//>>>>>>> 6c4ad0939d44788e7bd1cd88505b8f3e2e9bc395
             pc_buffer[i * 5 + 18] = color_data[idx4] + (color_data[idx4 + 1] << 8);
             pc_buffer[i * 5 + 19] = color_data[idx4 + 2];
         }
