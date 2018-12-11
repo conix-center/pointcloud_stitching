@@ -6,7 +6,8 @@ Scalable, multicamera distributed system for realtime pointcloud stitching in th
 This system has been designed to allow 10-20 cameras to be connected simultaneously. Currently, our set up involves each RealSense depth camera connected to its own Intel i7 NUC computer. Each NUC is connected to a local network via ethernet, as well as the central computer that will be doing the bulk of the computing. Our current camera calibration method is to use a Theodolite, a survey precision instrument, to obtain real world coordinates of each camera (this will be updated soon I hope).
 
 ## Installation
-Different steps of installation are required for installing the realsense camera servers versus the central computing system.
+Different steps of installation are required for installing the realsense camera servers versus the central computing system. The current instructions are for running on Ubuntu 18.04.1 LTS.
+
 #### Camera servers on the edge
 - Go to [Librealsense Github](https://github.com/IntelRealSense/librealsense) and follow the instructions to install the Librealsense 2.0 SDK
 - Ensure that your cmake version is 3.1 or later. If not, download and install a newer version from the [CMake website](https://cmake.org/download/)
