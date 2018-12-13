@@ -35,3 +35,12 @@ Each realsense is connected to an Intel i7 NUC, which are all accessible through
 
 Build Camera Server
 `mkdir build && cd build && cmake .. && make && make install`
+
+## Optimized Code
+To run the optimized version of pcs-camera-server, you will want to run pcs-camera-optimized. This contains benchmarking tools that show the runtime of the optimized version of processing the depth frames, performing transforms, and then converting the values. It also includes the theoretical FPS, but this is calculated without taking in to consideration the time it takes to grab a frame from the realsense as well as the time it takes to send the data over the network. To run the optimized code, run `pcs-camera-optimized`<br />
+- Usage:<br />
+  `-f <file> sample data set to run`<br />
+  `-s        send data to central camera server if available`<br />
+  `-m        use SIMD instructions`<br />
+  `-t <n>    use OpenMP with n threads`<br />
+  
