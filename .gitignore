@@ -1,3 +1,5 @@
 build/
 pointclouds/
 snappy
+
+\.DS_Store
