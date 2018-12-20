@@ -6,7 +6,7 @@ project(Point_Cloud_Stitching)
 # Save the command line compile commands in the build output
 set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
 
-set(CMAKE_CXX_FLAGS_RELEASE "-O2")
+set(CMAKE_CXX_FLAGS_RELEASE "-O3")
 
 option(BUILD_CLIENT "Build the central computing client" OFF)
 
@@ -23,5 +23,4 @@ elseif(COMPILER_SUPPORTS_CXX0X)
 endif()
 
 add_subdirectory(src)
-add_subdirectory(snappy)
 
