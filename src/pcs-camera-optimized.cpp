@@ -23,8 +23,6 @@
 #include <immintrin.h>
 #include <xmmintrin.h>
 
-#include "snappy.h"
-
 #define TIME_NOW    std::chrono::high_resolution_clock::now()
 #define BUF_SIZE    5000000
 #define CONV_RATE   1000.0
@@ -48,8 +46,6 @@ typedef std::chrono::high_resolution_clock clockTime;
 typedef std::chrono::duration<double, std::milli> timeMilli;
 typedef std::chrono::time_point<clockTime> timestamp;
 
-timestamp time_start, time_end;
-
 char *filename = "samples.bag";
 
 bool display_updates = false;
@@ -57,45 +53,23 @@ bool send_buffer = false;
 bool cutoff = false;
 bool use_simd = false;
 bool compress = false;
-bool initialized = false;
-
 int num_of_threads = 1;
 int client_sock = 0;
 int sockfd = 0;
-int pts_size;
 
-float conv_rate = CONV_RATE;
-float half = 0.5;
-float x_hi = 2;
-float x_lo = -2;
-float y_hi = 2;
-float y_lo = -2;
-float z_hi = 3;
-float z_lo = 0;
+short *thread_buffers[16];
+
+timestamp time_start, time_end;
 
 float tf_mat[] =   {-0.99977970,  0.00926272,  0.01883480,  0.00000000,
                     -0.01638983,  0.21604544, -0.97624574,  3.41600000,
                     -0.01311186, -0.97633937, -0.21584603,  1.80200000,
                      0.00000000,  0.00000000,  0.00000000,  1.00000000};
-
-__m256 mat_x_v = _mm256_setr_ps(tf_mat[0], tf_mat[4], tf_mat[8], 0, tf_mat[0], tf_mat[4], tf_mat[8], 0);
-__m256 mat_y_v = _mm256_setr_ps(tf_mat[1], tf_mat[5], tf_mat[9], 0, tf_mat[1], tf_mat[5], tf_mat[9], 0);
-__m256 mat_z_v = _mm256_setr_ps(tf_mat[2], tf_mat[6], tf_mat[10], 0, tf_mat[2], tf_mat[6], tf_mat[10], 0);
-__m256 mat_d_v = _mm256_setr_ps(tf_mat[3], tf_mat[7], tf_mat[11], 0, tf_mat[3], tf_mat[7], tf_mat[11], 0);
-
-__m256 w_v;
-__m256 h_v;
-__m256 w_min_v;
-__m256 h_min_v;
-__m256 cl_bp_v;
-__m256 cl_sb_v;
-
-const __m256 conv_rate_v = _mm256_broadcast_ss(&conv_rate);
-const __m256 z_lo_v      = _mm256_broadcast_ss(&z_lo);
-const __m256 z_hi_v      = _mm256_broadcast_ss(&z_hi);
-const __m256 x_lo_v      = _mm256_broadcast_ss(&x_lo);
-const __m256 x_hi_v      = _mm256_broadcast_ss(&x_hi);
-const __m256 zero_v      = _mm256_setzero_ps();
+                 
+__m128 ss_a = _mm_set_ps(0, tf_mat[8], tf_mat[4], tf_mat[0]);
+__m128 ss_b = _mm_set_ps(0, tf_mat[9], tf_mat[5], tf_mat[1]);
+__m128 ss_c = _mm_set_ps(0, tf_mat[10], tf_mat[6], tf_mat[2]);
+__m128 ss_d = _mm_set_ps(0, tf_mat[11], tf_mat[7], tf_mat[3]);
 
 // Creates TCP stream socket and connects to the central computer.
 void initSocket(int port) {
@@ -269,7 +243,7 @@ int main (int argc, char** argv) {
 
             std::cout << "Frame Time: " << timeMilli(time_end - time_start).count() \
                 << " ms " << "FPS: " << 1000.0 / timeMilli(time_end - time_start).count() \
-                << "\t Buffer size: " << float(buff_size)/(1<<20) << " MBytes" << std::endl;
+                << "\t Buffer size: " << float(buff_size)/1000000 << " MBytes" << std::endl;
             duration_sum += timeMilli(time_end - time_start).count();
             buff_size_sum += buff_size;
 
@@ -341,339 +315,244 @@ int copyPointCloudXYZRGBToBufferSIMD(rs2::points& pts, const rs2::video_frame& c
     const rs2::texture_coordinate* tcrd = pts.get_texture_coordinates();
     const uint8_t* color_data = reinterpret_cast<const uint8_t*>(color.get_data());
 
-    if (!initialized) {
-        pts_size = pts.size();
-
-        float w_f = color.get_width();
-        float h_f = color.get_height();
-        float w_min_f = w_f - 1;
-        float h_min_f = h_f - 1;
-        float cl_bp_f = color.get_bytes_per_pixel();
-        float cl_sb_f = color.get_stride_in_bytes();
-
-        w_v     = _mm256_broadcast_ss(&w_f);
-        h_v     = _mm256_broadcast_ss(&h_f);
-        w_min_v = _mm256_broadcast_ss(&w_min_f);
-        h_min_v = _mm256_broadcast_ss(&h_min_f);
-        cl_bp_v = _mm256_broadcast_ss(&cl_bp_f);
-        cl_sb_v = _mm256_broadcast_ss(&cl_sb_f);
-
+    if (!initialized){
         initialized = true;
+        pts_size = pts.size();
+        w = color.get_width();
+        h = color.get_height();
+        cl_bp = color.get_bytes_per_pixel();
+        cl_sb = color.get_stride_in_bytes();
+        w_min = (w - 1);
+        h_min = (h - 1);
+
+        // TODO CLEAN
+        conv_rate = CONV_RATE;
+        point5f = .5f;
+        w_f = float(w);
+        h_f = float(h);
+        //w_min_f = float(w_min);
+        //h_min_f = float(h_min);
+        cl_bp_f = float(cl_bp);
+        cl_sb_f = float(cl_sb);
+
+        // Float
+        _conv_rate = _mm_broadcast_ss(&conv_rate);
+        _cl_bp_f = _mm_broadcast_ss(&cl_bp_f);
+        _cl_sb_f = _mm_broadcast_ss(&cl_sb_f);
+        //_h_min_f = _mm_broadcast_ss(&h_min_f);
+        _f5 = _mm_broadcast_ss(&point5f);
+        
+        _w = _mm_broadcast_ss(&w_f);
+        _h = _mm_broadcast_ss(&h_f);
+        z_lo = _mm_set_ps1(0);
+        z_hi = _mm_set_ps1(1.5);
+        x_lo = _mm_set_ps1(-2);
+        x_hi = _mm_set_ps1(2);
+
+        // integ
+        _zero = _mm_setzero_si128();
+        _w_min = _mm_set1_epi32(w_min);
+        _h_min = _mm_set1_epi32(h_min);
+        _cl_bp = _mm_set1_epi32(cl_bp);
+        const __m128i _cl_sb = _mm_set1_epi32(cl_sb);
     }
-
-// for (int j = 0; j < 8; j++) {
-//     // float * val1 = (float *)&u_v;
-//     // printf("%.3f ", val1[j]);
-//     float * val2 = (float *)&w_v;
-//     printf("%.3f|", val2[j]);
-//     // if (color_idx[j] != 0) {
-//     //     printf("%d:%d  \n", j, color_idx[j]);
-//     // }
-// }
-// printf("\n");
-
-    int count = 0;
     
-    #pragma omp parallel for schedule(static, 10000) num_threads(num_of_threads)
-    for (int i = 0; i < pts_size; i += 8) {
-
+    int global_count = 0;
+    
+    #pragma omp parallel for ordered schedule(static, 10000) num_threads(num_of_threads)
+    for (int i = 0; i < pts_size; i += 4) {
+            //unsigned int id = omp_get_thread_num();
+        
         int i1 = i;
         int i2 = i+1;
         int i3 = i+2;
         int i4 = i+3;
-        int i5 = i+4;
-        int i6 = i+5;
-        int i7 = i+6;
-        int i8 = i+7;
 
-        // Performs calculations to get color indices corresponding to each point
-        // Get x index
-        __m256 u_v = _mm256_set_ps(tcrd[i8].u, tcrd[i7].u, tcrd[i6].u, tcrd[i5].u, tcrd[i4].u, tcrd[i3].u, tcrd[i2].u, tcrd[i1].u);
-        u_v = _mm256_mul_ps(u_v, w_v);
-        u_v = _mm256_round_ps(u_v, _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC);
-        u_v = _mm256_max_ps(u_v, zero_v);
-        u_v = _mm256_min_ps(u_v, w_min_v);
-        u_v = _mm256_mul_ps(u_v, cl_bp_v);
+        __attribute__((aligned(16))) float v_temp1[4];
+        __attribute__((aligned(16))) float v_temp2[4];
+        __attribute__((aligned(16))) float v_temp3[4];
+        __attribute__((aligned(16))) float v_temp4[4];
 
-        // Get y index then calculate index in array
-        __m256 v_v = _mm256_set_ps(tcrd[i1].v, tcrd[i2].v, tcrd[i3].v, tcrd[i4].v, tcrd[i5].v, tcrd[i6].v, tcrd[i7].v, tcrd[i8].v);
-        v_v = _mm256_mul_ps(v_v, h_v);
-        v_v = _mm256_round_ps(v_v, _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC);
-        v_v = _mm256_max_ps(v_v, zero_v);
-        v_v = _mm256_min_ps(v_v, h_min_v);
-        v_v = _mm256_fmadd_ps(v_v, cl_sb_v, u_v);
+        __attribute__((aligned(16))) int idx[4];
+        __attribute__((aligned(16))) int idy[4];
 
-        // Convert simd vectors into integer array in memory
-        __m256i color_idx_vi = _mm256_cvtps_epi32(v_v);
-        __attribute__((aligned(32))) int color_idx[8];
-        _mm256_store_si256((__m256i *)color_idx, color_idx_vi);
+        // load
+        __m128 _x = _mm_set_ps(tcrd[i1].u, tcrd[i2].u, tcrd[i3].u, tcrd[i4].u); // load u
+        __m128 _y = _mm_set_ps(tcrd[i1].v, tcrd[i2].v, tcrd[i3].v, tcrd[i4].v); // load v
 
+        _x = _mm_fmadd_ps(_x, _w, _f5); // fma
+        _y = _mm_fmadd_ps(_y, _h, _f5);
+
+        // float to int
+        __m128i _xi = _mm_cvttps_epi32(_x);
+        __m128i _yi = _mm_cvttps_epi32(_y);
+
+        _xi = _mm_max_epi32(_xi, _zero);    // max
+        _yi = _mm_max_epi32(_yi, _zero);
+        _xi = _mm_min_epi32(_xi, _w_min);   // min
+        _yi = _mm_min_epi32(_yi, _h_min);
+        
+        _mm_storeu_si128((__m128i_u*)idx, _xi);
+        _mm_storeu_si128((__m128i_u*)idy, _yi);
+
+        int idx1 = idx[3]*cl_bp + idy[3]*cl_sb;
+        int idx2 = idx[2]*cl_bp + idy[2]*cl_sb;
+        int idx3 = idx[1]*cl_bp + idy[1]*cl_sb;
+        int idx4 = idx[0]*cl_bp + idy[0]*cl_sb;
 
         // Point Transformation using SIMD instructions for Matrix Multiplication on xyz points
-        __m256 x12 = _mm256_set_ps(vert[i2].x, vert[i2].x, vert[i2].x, vert[i2].x, vert[i].x, vert[i].x, vert[i].x, vert[i].x);
-        __m256 y12 = _mm256_set_ps(vert[i2].y, vert[i2].y, vert[i2].y, vert[i2].y, vert[i].y, vert[i].y, vert[i].y, vert[i].y);
-        __m256 z12 = _mm256_set_ps(vert[i2].z, vert[i2].z, vert[i2].z, vert[i2].z, vert[i].z, vert[i].z, vert[i].z, vert[i].z);
-        __m256 v12 = _mm256_fmadd_ps(x12, mat_x_v, mat_d_v);
-        v12 = _mm256_fmadd_ps(y12, mat_y_v, v12);
-        v12 = _mm256_fmadd_ps(z12, mat_z_v, v12);
-        v12 = _mm256_mul_ps(v12, conv_rate_v);
+        __m128 ss_x1 = _mm_broadcast_ss(&vert[i].x);
+        __m128 ss_y1 = _mm_broadcast_ss(&vert[i].y);
+        __m128 ss_z1 = _mm_broadcast_ss(&vert[i].z);
 
-        // Store into memory
-        __attribute__((aligned(16))) float v_temp12[8];
-        _mm256_store_ps(v_temp12, v12);
+        __m128 ss_x2 = _mm_broadcast_ss(&vert[i2].x);
+        __m128 ss_y2 = _mm_broadcast_ss(&vert[i2].y);
+        __m128 ss_z2 = _mm_broadcast_ss(&vert[i2].z);
 
-        // pc_buffer[i * 5 + 0] = short(v_temp12[0]);
-        // pc_buffer[i * 5 + 1] = short(v_temp12[1]);
-        // pc_buffer[i * 5 + 2] = short(v_temp12[2]);
-        // pc_buffer[i * 5 + 3] = color_data[color_idx[0]] + (color_data[color_idx[0] + 1] << 8);
-        // pc_buffer[i * 5 + 4] = color_data[color_idx[0] + 2];
-        // pc_buffer[i * 5 + 5] = short(v_temp12[4]);
-        // pc_buffer[i * 5 + 6] = short(v_temp12[5]);
-        // pc_buffer[i * 5 + 7] = short(v_temp12[6]);
-        // pc_buffer[i * 5 + 8] = color_data[color_idx[1]] + (color_data[color_idx[1] + 1] << 8);
-        // pc_buffer[i * 5 + 9] = color_data[color_idx[1] + 2];
+        __m128 ss_x3 = _mm_broadcast_ss(&vert[i3].x);
+        __m128 ss_y3 = _mm_broadcast_ss(&vert[i3].y);
+        __m128 ss_z3 = _mm_broadcast_ss(&vert[i3].z);
 
-        __m256 x34 = _mm256_set_ps(vert[i4].x, vert[i4].x, vert[i4].x, vert[i4].x, vert[i3].x, vert[i3].x, vert[i3].x, vert[i3].x);
-        __m256 y34 = _mm256_set_ps(vert[i4].y, vert[i4].y, vert[i4].y, vert[i4].y, vert[i3].y, vert[i3].y, vert[i3].y, vert[i3].y);
-        __m256 z34 = _mm256_set_ps(vert[i4].z, vert[i4].z, vert[i4].z, vert[i4].z, vert[i3].z, vert[i3].z, vert[i3].z, vert[i3].z);
-        __m256 v34 = _mm256_fmadd_ps(x34, mat_x_v, mat_d_v);
-        v34 = _mm256_fmadd_ps(y34, mat_y_v, v34);
-        v34 = _mm256_fmadd_ps(z34, mat_z_v, v34);
-        v34 = _mm256_mul_ps(v34, conv_rate_v);
+        __m128 ss_x4 = _mm_broadcast_ss(&vert[i4].x);
+        __m128 ss_y4 = _mm_broadcast_ss(&vert[i4].y);
+        __m128 ss_z4 = _mm_broadcast_ss(&vert[i4].z);
 
-        __attribute__((aligned(16))) float v_temp34[8];
-        _mm256_store_ps(v_temp34, v34);
+        __m128 _v1 = _mm_fmadd_ps(ss_x1, ss_a, ss_d);
+        _v1 = _mm_fmadd_ps(ss_y1, ss_b, _v1);
+        _v1 = _mm_fmadd_ps(ss_z1, ss_c, _v1);
 
-        // pc_buffer[i * 5 + 10] = short(v_temp34[0]);
-        // pc_buffer[i * 5 + 11] = short(v_temp34[1]);
-        // pc_buffer[i * 5 + 12] = short(v_temp34[2]);
-        // pc_buffer[i * 5 + 13] = color_data[color_idx[2]] + (color_data[color_idx[2] + 1] << 8);
-        // pc_buffer[i * 5 + 14] = color_data[color_idx[2] + 2];
-        
-        // //v4
-        // pc_buffer[i * 5 + 15] = short(v_temp34[4]);
-        // pc_buffer[i * 5 + 16] = short(v_temp34[5]);
-        // pc_buffer[i * 5 + 17] = short(v_temp34[6]);
-        // pc_buffer[i * 5 + 18] = color_data[color_idx[3]] + (color_data[color_idx[3] + 1] << 8);
-        // pc_buffer[i * 5 + 19] = color_data[color_idx[3] + 2];
+        __m128 _v2 = _mm_fmadd_ps(ss_x2, ss_a, ss_d);
+        _v2 = _mm_fmadd_ps(ss_y2, ss_b, _v2);
+        _v2 = _mm_fmadd_ps(ss_z2, ss_c, _v2);
 
-        __m256 x56 = _mm256_set_ps(vert[i6].x, vert[i6].x, vert[i6].x, vert[i6].x, vert[i5].x, vert[i5].x, vert[i5].x, vert[i5].x);
-        __m256 y56 = _mm256_set_ps(vert[i6].y, vert[i6].y, vert[i6].y, vert[i6].y, vert[i5].y, vert[i5].y, vert[i5].y, vert[i5].y);
-        __m256 z56 = _mm256_set_ps(vert[i6].z, vert[i6].z, vert[i6].z, vert[i6].z, vert[i5].z, vert[i5].z, vert[i5].z, vert[i5].z);
-        __m256 v56 = _mm256_fmadd_ps(x56, mat_x_v, mat_d_v);
-        v56 = _mm256_fmadd_ps(y56, mat_y_v, v56);
-        v56 = _mm256_fmadd_ps(z56, mat_z_v, v56);
-        v56 = _mm256_mul_ps(v56, conv_rate_v);
+        __m128 _v3 = _mm_fmadd_ps(ss_x3, ss_a, ss_d);
+        _v3 = _mm_fmadd_ps(ss_y3, ss_b, _v3);
+        _v3 = _mm_fmadd_ps(ss_z3, ss_c, _v3);
 
-        __attribute__((aligned(16))) float v_temp56[8];
-        _mm256_store_ps(v_temp56, v56);
+        __m128 _v4 = _mm_fmadd_ps(ss_x4, ss_a, ss_d);
+        _v4 = _mm_fmadd_ps(ss_y4, ss_b, _v4);
+        _v4 = _mm_fmadd_ps(ss_z4, ss_c, _v4);
 
-         //v5
-        // pc_buffer[i * 5 + 20] = short(v_temp56[0]);
-        // pc_buffer[i * 5 + 21] = short(v_temp56[1]);
-        // pc_buffer[i * 5 + 22] = short(v_temp56[2]);
-        // pc_buffer[i * 5 + 23] = color_data[color_idx[4]] + (color_data[color_idx[4] + 1] << 8);
-        // pc_buffer[i * 5 + 24] = color_data[color_idx[4] + 2];
-        
-        // //v6
-        // pc_buffer[i * 5 + 25] = short(v_temp56[4]);
-        // pc_buffer[i * 5 + 26] = short(v_temp56[5]);
-        // pc_buffer[i * 5 + 27] = short(v_temp56[6]);
-        // pc_buffer[i * 5 + 28] = color_data[color_idx[5]] + (color_data[color_idx[5] + 1] << 8);
-        // pc_buffer[i * 5 + 29] = color_data[color_idx[5] + 2];
+        // SIMD multiply by conversion rate to be converted from floats to shorts later
+        _v1 = _mm_mul_ps(_v1, _conv_rate); // multiply with _conv_rate
+        _v2 = _mm_mul_ps(_v2, _conv_rate); // multiply with _conv_rate
+        _v3 = _mm_mul_ps(_v3, _conv_rate); // multiply with _conv_rate
+        _v4 = _mm_mul_ps(_v4, _conv_rate); // multiply with _conv_rate
 
-        __m256 x78 = _mm256_set_ps(vert[i8].x, vert[i8].x, vert[i8].x, vert[i8].x, vert[i7].x, vert[i7].x, vert[i7].x, vert[i7].x);
-        __m256 y78 = _mm256_set_ps(vert[i8].y, vert[i8].y, vert[i8].y, vert[i8].y, vert[i7].y, vert[i7].y, vert[i7].y, vert[i7].y);
-        __m256 z78 = _mm256_set_ps(vert[i8].z, vert[i8].z, vert[i8].z, vert[i8].z, vert[i7].z, vert[i7].z, vert[i7].z, vert[i7].z);
-        __m256 v78 = _mm256_fmadd_ps(x78, mat_x_v, mat_d_v);
-        v78 = _mm256_fmadd_ps(y78, mat_y_v, v78);
-        v78 = _mm256_fmadd_ps(z78, mat_z_v, v78);
-        v78 = _mm256_mul_ps(v78, conv_rate_v);
-
-        __attribute__((aligned(16))) float v_temp78[8];
-        _mm256_store_ps(v_temp78, v78);
-
-        //v7
-        // pc_buffer[i * 5 + 30] = short(v_temp78[0]);
-        // pc_buffer[i * 5 + 31] = short(v_temp78[1]);
-        // pc_buffer[i * 5 + 32] = short(v_temp78[2]);
-        // pc_buffer[i * 5 + 33] = color_data[color_idx[6]] + (color_data[color_idx[6] + 1] << 8);
-        // pc_buffer[i * 5 + 34] = color_data[color_idx[6] + 2];
-        
-        // //v8
-        // pc_buffer[i * 5 + 35] = short(v_temp78[4]);
-        // pc_buffer[i * 5 + 36] = short(v_temp78[5]);
-        // pc_buffer[i * 5 + 37] = short(v_temp78[6]);
-        // pc_buffer[i * 5 + 38] = color_data[color_idx[7]] + (color_data[color_idx[7] + 1] << 8);
-        // pc_buffer[i * 5 + 39] = color_data[color_idx[7] + 2];
-
+        // Store SIMD Vectors into memory (arrays) 
+        _mm_store_ps(v_temp1, _v1);
+        _mm_store_ps(v_temp2, _v2);
+        _mm_store_ps(v_temp3, _v3);
+        _mm_store_ps(v_temp4, _v4);
 
         if (cutoff) {
             // Check if x and z points are within range
-            __m256 z_pts = _mm256_set_ps(vert[i].z, vert[i2].z, vert[i3].z, vert[i4].z, vert[i5].z, vert[i6].z, vert[i7].z, vert[i8].z);
-            __m256 z_gt_lo = _mm256_cmp_ps(z_pts, z_lo_v, _CMP_GT_OS);
-            __m256 z_le_hi = _mm256_cmp_ps(z_pts, z_hi_v, _CMP_LE_OS);
-            __m256 z_mask = _mm256_and_ps(z_gt_lo, z_le_hi);
+            __m128 z_pts = _mm_set_ps(vert[i].z, vert[i2].z, vert[i3].z, vert[i4].z);
+            __m128 x_pts = _mm_set_ps(vert[i].x, vert[i2].x, vert[i3].x, vert[i4].x);
 
-            __m256 x_pts = _mm256_set_ps(vert[i].x, vert[i2].x, vert[i3].x, vert[i4].x, vert[i5].x, vert[i6].x, vert[i7].x, vert[i8].x);
-            __m256 x_gt_lo = _mm256_cmp_ps(x_pts, x_lo_v, _CMP_GT_OS);
-            __m256 x_le_hi = _mm256_cmp_ps(x_pts, x_hi_v, _CMP_LE_OS);
-            __m256 x_mask = _mm256_and_ps(x_gt_lo, x_le_hi);
+            __m128 z_gt_lo = _mm_cmpgt_ps(z_pts, z_lo);
+            __m128 z_le_hi = _mm_cmple_ps(z_pts, z_hi);
+            __m128 x_gt_lo = _mm_cmpgt_ps(x_pts, x_lo);
+            __m128 x_le_hi = _mm_cmple_ps(x_pts, x_hi);
 
-            __m256 pt_mask = _mm256_and_ps(z_mask, x_mask);
+            __m128 z_mask = _mm_and_ps(z_gt_lo, z_le_hi);
+            __m128 x_mask = _mm_and_ps(x_gt_lo, x_le_hi);
+            __m128 pt_mask = _mm_and_ps(z_mask, x_mask);
 
-            float pt_mask_f[8];
-            _mm256_store_ps(pt_mask_f, pt_mask);
+            float pt_mask_f[4];
+            _mm_store_ps(pt_mask_f, pt_mask);
 
             long count = -1;
 
             //v1
             if (pt_mask_f[0] != 0) {
-                pc_buffer[count * 5 + 0] = short(v_temp12[0]);
-                pc_buffer[count * 5 + 1] = short(v_temp12[1]);
-                pc_buffer[count * 5 + 2] = short(v_temp12[2]);
-                pc_buffer[count * 5 + 3] = color_data[color_idx[0]] + (color_data[color_idx[0] + 1] << 8);
-                pc_buffer[count * 5 + 4] = color_data[color_idx[0] + 2];
 
-                count++;
+                #pragma omp atomic capture
+                count = global_count++;
+
+                pc_buffer[count * 5 + 0] = short(v_temp1[0]);
+                pc_buffer[count * 5 + 1] = short(v_temp1[1]);
+                pc_buffer[count * 5 + 2] = short(v_temp1[2]);
+                pc_buffer[count * 5 + 3] = color_data[idx1] + (color_data[idx1 + 1] << 8);
+                pc_buffer[count * 5 + 4] = color_data[idx1 + 2];
+
+                // printf("%.2f,%.2f = %f\n", vert[i].z, vert[i].x, pt_mask_f[0]);
             }
             
             //v2
             if (pt_mask_f[1] != 0) {
-                pc_buffer[count * 5 + 0] = short(v_temp12[4]);
-                pc_buffer[count * 5 + 1] = short(v_temp12[5]);
-                pc_buffer[count * 5 + 2] = short(v_temp12[6]);
-                pc_buffer[count * 5 + 3] = color_data[color_idx[1]] + (color_data[color_idx[1] + 1] << 8);
-                pc_buffer[count * 5 + 4] = color_data[color_idx[1] + 2];
+                
+                #pragma omp atomic capture
+                count = global_count++;
 
-                count++;
+                pc_buffer[count * 5 + 0] = short(v_temp2[0]);
+                pc_buffer[count * 5 + 1] = short(v_temp2[1]);
+                pc_buffer[count * 5 + 2] = short(v_temp2[2]);
+                pc_buffer[count * 5 + 3] = color_data[idx2] + (color_data[idx2 + 1] << 8);
+                pc_buffer[count * 5 + 4] = color_data[idx2 + 2];
+
+                // printf("%.2f,%.2f = %f\n", vert[i2].z, vert[i2].x, pt_mask_f[1]);
             }
             
             //v3
             if (pt_mask_f[2] != 0) {
-                pc_buffer[count * 5 + 0] = short(v_temp34[0]);
-                pc_buffer[count * 5 + 1] = short(v_temp34[1]);
-                pc_buffer[count * 5 + 2] = short(v_temp34[2]);
-                pc_buffer[count * 5 + 3] = color_data[color_idx[2]] + (color_data[color_idx[2] + 1] << 8);
-                pc_buffer[count * 5 + 4] = color_data[color_idx[2] + 2];
+                
+                #pragma omp atomic capture
+                count = global_count++;
+                
+                pc_buffer[count * 5 + 0] = short(v_temp3[0]);
+                pc_buffer[count * 5 + 1] = short(v_temp3[1]);
+                pc_buffer[count * 5 + 2] = short(v_temp3[2]);
+                pc_buffer[count * 5 + 3] = color_data[idx3] + (color_data[idx3 + 1] << 8);
+                pc_buffer[count * 5 + 4] = color_data[idx3 + 2];
 
-                count++;
+                // printf("%.2f,%.2f = %f\n", vert[i3].z, vert[i3].x, pt_mask_f[2]);
             }
 
             //v4
             if (pt_mask_f[3] != 0) {
-                pc_buffer[count * 5 + 0] = short(v_temp34[4]);
-                pc_buffer[count * 5 + 1] = short(v_temp34[5]);
-                pc_buffer[count * 5 + 2] = short(v_temp34[6]);
-                pc_buffer[count * 5 + 3] = color_data[color_idx[3]] + (color_data[color_idx[3] + 1] << 8);
-                pc_buffer[count * 5 + 4] = color_data[color_idx[3] + 2];
+                
+                #pragma omp atomic capture
+                count = global_count++;
 
-                count++;
-            }
+                pc_buffer[count * 5 + 0] = short(v_temp4[0]);
+                pc_buffer[count * 5 + 1] = short(v_temp4[1]);
+                pc_buffer[count * 5 + 2] = short(v_temp4[2]);
+                pc_buffer[count * 5 + 3] = color_data[idx4] + (color_data[idx4 + 1] << 8);
+                pc_buffer[count * 5 + 4] = color_data[idx4 + 2];
 
-            //v5
-            if (pt_mask_f[4] != 0) {
-                pc_buffer[count * 5 + 0] = short(v_temp56[0]);
-                pc_buffer[count * 5 + 1] = short(v_temp56[1]);
-                pc_buffer[count * 5 + 2] = short(v_temp56[2]);
-                pc_buffer[count * 5 + 3] = color_data[color_idx[4]] + (color_data[color_idx[4] + 1] << 8);
-                pc_buffer[count * 5 + 4] = color_data[color_idx[4] + 2];
-
-                count++;
-            }
-            
-            //v6
-            if (pt_mask_f[5] != 0) {
-                pc_buffer[count * 5 + 0] = short(v_temp56[4]);
-                pc_buffer[count * 5 + 1] = short(v_temp56[5]);
-                pc_buffer[count * 5 + 2] = short(v_temp56[6]);
-                pc_buffer[count * 5 + 3] = color_data[color_idx[5]] + (color_data[color_idx[5] + 1] << 8);
-                pc_buffer[count * 5 + 4] = color_data[color_idx[5] + 2];
-
-                count++;
-            }
-            
-            //v7
-            if (pt_mask_f[6] != 0) {
-                pc_buffer[count * 5 + 0] = short(v_temp78[0]);
-                pc_buffer[count * 5 + 1] = short(v_temp78[1]);
-                pc_buffer[count * 5 + 2] = short(v_temp78[2]);
-                pc_buffer[count * 5 + 3] = color_data[color_idx[6]] + (color_data[color_idx[6] + 1] << 8);
-                pc_buffer[count * 5 + 4] = color_data[color_idx[6] + 2];
-
-                count++;
-            }
-
-            //v8
-            if (pt_mask_f[7] != 0) {
-                pc_buffer[count * 5 + 0] = short(v_temp78[4]);
-                pc_buffer[count * 5 + 1] = short(v_temp78[5]);
-                pc_buffer[count * 5 + 2] = short(v_temp78[6]);
-                pc_buffer[count * 5 + 3] = color_data[color_idx[7]] + (color_data[color_idx[7] + 1] << 8);
-                pc_buffer[count * 5 + 4] = color_data[color_idx[7] + 2];
-
-                count++;
+                // printf("%.2f,%.2f = %f\n", vert[i4].z, vert[i4].x, pt_mask_f[3]);
             }
         }
 
         else {
-
             //v1
-            pc_buffer[i * 5 + 0] = short(v_temp12[0]);
-            pc_buffer[i * 5 + 1] = short(v_temp12[1]);
-            pc_buffer[i * 5 + 2] = short(v_temp12[2]);
-            pc_buffer[i * 5 + 3] = color_data[color_idx[0]] + (color_data[color_idx[0] + 1] << 8);
-            pc_buffer[i * 5 + 4] = color_data[color_idx[0] + 2];
+            pc_buffer[i * 5 + 0] = short(v_temp1[0]);
+            pc_buffer[i * 5 + 1] = short(v_temp1[1]);
+            pc_buffer[i * 5 + 2] = short(v_temp1[2]);
+            pc_buffer[i * 5 + 3] = color_data[idx1] + (color_data[idx1 + 1] << 8);
+            pc_buffer[i * 5 + 4] = color_data[idx1 + 2];
             
             //v2
-            pc_buffer[i * 5 + 5] = short(v_temp12[4]);
-            pc_buffer[i * 5 + 6] = short(v_temp12[5]);
-            pc_buffer[i * 5 + 7] = short(v_temp12[6]);
-            pc_buffer[i * 5 + 8] = color_data[color_idx[1]] + (color_data[color_idx[1] + 1] << 8);
-            pc_buffer[i * 5 + 9] = color_data[color_idx[1] + 2];
+            pc_buffer[i * 5 + 5] = short(v_temp2[0]);
+            pc_buffer[i * 5 + 6] = short(v_temp2[1]);
+            pc_buffer[i * 5 + 7] = short(v_temp2[2]);
+            pc_buffer[i * 5 + 8] = color_data[idx2] + (color_data[idx2 + 1] << 8);
+            pc_buffer[i * 5 + 9] = color_data[idx2 + 2];
             
             //v3
-            pc_buffer[i * 5 + 10] = short(v_temp34[0]);
-            pc_buffer[i * 5 + 11] = short(v_temp34[1]);
-            pc_buffer[i * 5 + 12] = short(v_temp34[2]);
-            pc_buffer[i * 5 + 13] = color_data[color_idx[2]] + (color_data[color_idx[2] + 1] << 8);
-            pc_buffer[i * 5 + 14] = color_data[color_idx[2] + 2];
+            pc_buffer[i * 5 + 10] = short(v_temp3[0]);
+            pc_buffer[i * 5 + 11] = short(v_temp3[1]);
+            pc_buffer[i * 5 + 12] = short(v_temp3[2]);
+            pc_buffer[i * 5 + 13] = color_data[idx3] + (color_data[idx3 + 1] << 8);
+            pc_buffer[i * 5 + 14] = color_data[idx3 + 2];
             
             //v4
-            pc_buffer[i * 5 + 15] = short(v_temp34[4]);
-            pc_buffer[i * 5 + 16] = short(v_temp34[5]);
-            pc_buffer[i * 5 + 17] = short(v_temp34[6]);
-            pc_buffer[i * 5 + 18] = color_data[color_idx[3]] + (color_data[color_idx[3] + 1] << 8);
-            pc_buffer[i * 5 + 19] = color_data[color_idx[3] + 2];
-
-            //v5
-            pc_buffer[i * 5 + 20] = short(v_temp56[0]);
-            pc_buffer[i * 5 + 21] = short(v_temp56[1]);
-            pc_buffer[i * 5 + 22] = short(v_temp56[2]);
-            pc_buffer[i * 5 + 23] = color_data[color_idx[4]] + (color_data[color_idx[4] + 1] << 8);
-            pc_buffer[i * 5 + 24] = color_data[color_idx[4] + 2];
-            
-            //v6
-            pc_buffer[i * 5 + 25] = short(v_temp56[4]);
-            pc_buffer[i * 5 + 26] = short(v_temp56[5]);
-            pc_buffer[i * 5 + 27] = short(v_temp56[6]);
-            pc_buffer[i * 5 + 28] = color_data[color_idx[5]] + (color_data[color_idx[5] + 1] << 8);
-            pc_buffer[i * 5 + 29] = color_data[color_idx[5] + 2];
-            
-            //v7
-            pc_buffer[i * 5 + 30] = short(v_temp78[0]);
-            pc_buffer[i * 5 + 31] = short(v_temp78[1]);
-            pc_buffer[i * 5 + 32] = short(v_temp78[2]);
-            pc_buffer[i * 5 + 33] = color_data[color_idx[6]] + (color_data[color_idx[6] + 1] << 8);
-            pc_buffer[i * 5 + 34] = color_data[color_idx[6] + 2];
-            
-            //v8
-            pc_buffer[i * 5 + 35] = short(v_temp78[4]);
-            pc_buffer[i * 5 + 36] = short(v_temp78[5]);
-            pc_buffer[i * 5 + 37] = short(v_temp78[6]);
-            pc_buffer[i * 5 + 38] = color_data[color_idx[7]] + (color_data[color_idx[7] + 1] << 8);
-            pc_buffer[i * 5 + 39] = color_data[color_idx[7] + 2];
-
+            pc_buffer[i * 5 + 15] = short(v_temp4[0]);
+            pc_buffer[i * 5 + 16] = short(v_temp4[1]);
+            pc_buffer[i * 5 + 17] = short(v_temp4[2]);
+            pc_buffer[i * 5 + 18] = color_data[idx4] + (color_data[idx4 + 1] << 8);
+            pc_buffer[i * 5 + 19] = color_data[idx4 + 2];
         }
     
 }
@@ -744,6 +623,17 @@ int sendXYZRGBPointcloud(rs2::points pts, rs2::video_frame color, short * buffer
 
     //TODO some issues with the buffer offset, on the receiver buff+short but size is int
 
+    //TODO Try Zstandard v1.3.7 vs Snappy
+
+    //TODO Investigate https://github.com/IntelRealSense/librealsense/wiki/API-Changes#from-2161-to-2162
+    // rs2_project_color_pixel_to_depth_pixel - map pixel in the color image to pixel in depth image
+    
+    // TODO rs2_create_hole_filling_filter_block - Hole-Filling filter supports three modes of operation:
+
+    // TODO rs2_create_temporal_filter_block - Temporal filter that rectifies depth values based on previously-available frames.
+
+    // TODO Investigate https://github.com/IntelRealSense/librealsense/wiki/API-Changes#from-2161-to-2162
+
     if (use_simd)
     {
         size = copyPointCloudXYZRGBToBufferSIMD(pts, color, &buffer[0] + sizeof(short));
@@ -755,21 +645,21 @@ int sendXYZRGBPointcloud(rs2::points pts, rs2::video_frame color, short * buffer
     // Size in bytes of the payload
     size = 5 * size * sizeof(short);
     
-    if (compress)
-    {
-        std::string comp_buff;
-        int comp_size = snappy::Compress((const char*)buffer, size, &comp_buff);
+    // if (compress)
+    // {
+    //     std::string comp_buff;
+    //     int comp_size = snappy::Compress((const char*)buffer, size, &comp_buff);
 
-        if (send_buffer)
-        {
-            // copy compressed buffer
-            memcpy(&buffer[0] + sizeof(int), (char *)&comp_size, comp_size);
-            size = comp_size;
-        }else
-        {
-            return comp_size;
-        }
-    }
+    //     if (send_buffer)
+    //     {
+    //         // copy compressed buffer
+    //         memcpy(&buffer[0] + sizeof(int), (char *)&comp_size, comp_size);
+    //         size = comp_size;
+    //     }else
+    //     {
+    //         return comp_size;
+    //     }
+    // }
     
     if (send_buffer)
     {   
