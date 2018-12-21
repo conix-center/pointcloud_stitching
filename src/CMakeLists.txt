@@ -33,17 +33,23 @@ target_link_libraries(
     pcs-camera-optimized
     realsense2
     "${OpenMP_CXX_FLAGS}"
-    # snappy
 )
 set_target_properties(pcs-camera-optimized PROPERTIES COMPILE_FLAGS "-mavx -mfma" )
 
+add_executable(pcs-client pcs-client.cpp)
+target_link_libraries(
+    pcs-client
+    realsense2
+    "${OpenMP_CXX_FLAGS}"
+)
+set_target_properties(pcs-client PROPERTIES COMPILE_FLAGS "-mavx -mfma" )
 
 install(
     TARGETS
-    pcs-multicamera-client
     pcs-camera-grab-frames
     pcs-camera-test-samples
     pcs-camera-optimized
+    pcs-client
     
     RUNTIME DESTINATION
     ${CMAKE_INSTALL_PREFIX}/bin
@@ -61,7 +67,6 @@ if (BUILD_CLIENT)
     target_link_libraries(
         pcs-multicamera-optimized
         realsense2
-        # snappy
     )
 
     install(
