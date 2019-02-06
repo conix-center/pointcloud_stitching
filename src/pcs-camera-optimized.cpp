@@ -46,8 +46,6 @@ typedef std::chrono::high_resolution_clock clockTime;
 typedef std::chrono::duration<double, std::milli> timeMilli;
 typedef std::chrono::time_point<clockTime> timestamp;
 
-timestamp time_start, time_end;
-
 char *filename;
 
 bool display_updates = false;
