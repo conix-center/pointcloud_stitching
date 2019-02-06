@@ -23,8 +23,4 @@ elseif(COMPILER_SUPPORTS_CXX0X)
 endif()
 
 add_subdirectory(src)
-<<<<<<< HEAD
-=======
 # add_subdirectory(snappy)
->>>>>>> 9fbccb985fd5f8a8869e67ba26bbdc1a0fa6d0f6
-
