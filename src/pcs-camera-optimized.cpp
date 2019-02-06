@@ -46,13 +46,9 @@ typedef std::chrono::high_resolution_clock clockTime;
 typedef std::chrono::duration<double, std::milli> timeMilli;
 typedef std::chrono::time_point<clockTime> timestamp;
 
-<<<<<<< HEAD
-char *filename = "samples.bag";
-=======
 timestamp time_start, time_end;
 
 char *filename;
->>>>>>> 9fbccb985fd5f8a8869e67ba26bbdc1a0fa6d0f6
 
 bool display_updates = false;
 bool send_buffer = false;
@@ -162,13 +158,6 @@ int main (int argc, char** argv) {
     int buff_size = 0, buff_size_sum = 0;
     short *buffer = (short *)malloc(sizeof(short) * BUF_SIZE);
     
-<<<<<<< HEAD
-    for (int i = 0; i < num_of_threads; i++){
-        thread_buffers[i] = (short *)malloc(sizeof(short) * (BUF_SIZE/num_of_threads + 100));
-    }
-
-    rs2::frameset frames;
-=======
     if (filename == NULL) {
         char pull_request[1] = {0};
         rs2::pointcloud pc;
@@ -198,7 +187,6 @@ int main (int argc, char** argv) {
                 // if (timer) {
                 //     grab_frame_start = TIME_NOW;
                 // }
->>>>>>> 9fbccb985fd5f8a8869e67ba26bbdc1a0fa6d0f6
 
                 // Grab depth and color frames, and map each point to a color value
                 auto frames = pipe.wait_for_frames();
@@ -212,17 +200,9 @@ int main (int argc, char** argv) {
                 auto pts = pc.calculate(depth);
                 pc.map_to(color);                       // Maps color values to a point in 3D space
 
-<<<<<<< HEAD
-            std::cout << "Frame Time: " << timeMilli(time_end - time_start).count() \
-                << " ms " << "FPS: " << 1000.0 / timeMilli(time_end - time_start).count() \
-                << "\t Buffer size: " << float(buff_size)/1000000 << " MBytes" << std::endl;
-            duration_sum += timeMilli(time_end - time_start).count();
-            buff_size_sum += buff_size;
-=======
                 // if (timer) {
                 //     calculate_end = TIME_NOW;
                 // }
->>>>>>> 9fbccb985fd5f8a8869e67ba26bbdc1a0fa6d0f6
 
                 buff_size = sendXYZRGBPointcloud(pts, color, buffer);
             }
