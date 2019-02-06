@@ -46,7 +46,13 @@ typedef std::chrono::high_resolution_clock clockTime;
 typedef std::chrono::duration<double, std::milli> timeMilli;
 typedef std::chrono::time_point<clockTime> timestamp;
 
+<<<<<<< HEAD
 char *filename = "samples.bag";
+=======
+timestamp time_start, time_end;
+
+char *filename;
+>>>>>>> 9fbccb985fd5f8a8869e67ba26bbdc1a0fa6d0f6
 
 bool display_updates = false;
 bool send_buffer = false;
@@ -147,151 +153,218 @@ void parseArgs(int argc, char** argv) {
                 break;
         }
     }
-
-    std::cout << "\Reading Frames from File: " << filename << std::endl;
 }
 
 int main (int argc, char** argv) {
-
-    // Parse Arguments
-    parseArgs(argc, argv);
-
-    // Set interrupt signal
-    signal(SIGINT, sigintHandler);
+    parseArgs(argc, argv);              // Parse Arguments
+    signal(SIGINT, sigintHandler);      // Set interrupt signal
     
-    rs2::config cfg;
-    rs2::pipeline pipe;
-    rs2::pointcloud pc;
-    
-    cfg.enable_device_from_file(filename);
-    rs2::pipeline_profile selection = pipe.start(cfg);
-
-    rs2::device device = pipe.get_active_profile().get_device();
-    std::cout << "Camera Info: " << device.get_info(RS2_CAMERA_INFO_NAME) << " FW ver:" << device.get_info(RS2_CAMERA_INFO_FIRMWARE_VERSION) << std::endl;
-    if (num_of_threads) std::cout << "OpenMP Threads: " << num_of_threads << std::endl;
-    
-    //auto depth_stream = selection.get_stream(RS2_STREAM_DEPTH).as<rs2::video_stream_profile>();
-    //auto resolution = std::make_pair(depth_stream.width(), depth_stream.height());
-    //auto intr = depth_stream.get_intrinsics();
-
-    // rs2::pipeline pipe;
-    // pipe.start();
-
-    // const auto CAPACITY = 5; // allow max latency of 5 frames
-    // rs2::frame_queue queue(CAPACITY);
-    // std::thread t([&]() {
-    //     while (true)
-    //     {
-    //         rs2::depth_frame frame;
-    //         if (queue.poll_for_frame(&frame))
-    //         {
-    //             frame.get_data();
-    //             // Do processing on the frame
-    //         }
-    //     }
-    // });
-    // t.detach();
-
-    // while (true)
-    // {
-    //     auto frames = pipe.wait_for_frames();
-    //     queue.enqueue(frames.get_depth_frame());
-    // }
-    //get_extrinsics(const rs2::stream_profile& from_stream, const rs2::stream_profile& to_stream)
-
-    int i = 0, last_frame = 0;
     int buff_size = 0, buff_size_sum = 0;
-    double duration_sum = 0;
     short *buffer = (short *)malloc(sizeof(short) * BUF_SIZE);
     
+<<<<<<< HEAD
     for (int i = 0; i < num_of_threads; i++){
         thread_buffers[i] = (short *)malloc(sizeof(short) * (BUF_SIZE/num_of_threads + 100));
     }
 
     rs2::frameset frames;
+=======
+    if (filename == NULL) {
+        char pull_request[1] = {0};
+        rs2::pointcloud pc;
+        rs2::pipeline pipe;
+        rs2::pipeline_profile selection = pipe.start();
+        rs2::device selected_device = selection.get_device();
+        auto depth_sensor = selected_device.first<rs2::depth_sensor>();
 
-    if (send_buffer) initSocket(PORT);
-    
-    while (true)
-    {    
-        
-        if (!pipe.poll_for_frames(&frames))
-        {
-            continue;
-        }
-        else
-        {
+        // Turn off laser emitter for better accuracy with multiple camera setup
+        if (depth_sensor.supports(RS2_OPTION_EMITTER_ENABLED))
+            depth_sensor.set_option(RS2_OPTION_EMITTER_ENABLED, 0.f);
 
-            if (!send_buffer && last_frame > frames.get_frame_number()) break;
-            if (last_frame == frames.get_frame_number()) continue;
+        initSocket(PORT);
+        signal(SIGINT, sigintHandler);
+
+        // Loop until client disconnected
+        while (1) {
+            // if (timer)
+            //     frame_start = TIME_NOW;
             
-            //std::cout << "Got Frame # " << last_frame << std::endl;
-            last_frame = frames.get_frame_number();
-            i++;
+            // Wait for pull request
+            if (recv(client_sock, pull_request, 1, 0) < 0) {
+                std::cout << "Client disconnected" << std::endl;
+                break;
+            }
+            if (pull_request[0] == 'Z') {          // Client requests color pointcloud (XYZRGB)
+                // if (timer) {
+                //     grab_frame_start = TIME_NOW;
+                // }
+>>>>>>> 9fbccb985fd5f8a8869e67ba26bbdc1a0fa6d0f6
 
-            //use frames here
-            
-                                                                // stairs.bag vs sample.bag
-            rs2::video_frame color = frames.get_color_frame();  // 0.003 ms vs 0.001ms
-            rs2::depth_frame depth = frames.get_depth_frame();  // 0.001ms vs 0.001ms
-            rs2::points pts = pc.calculate(depth);              // 27ms vs 27ms            
-            pc.map_to(color);       // 0.01ms vs 0.02ms  // Maps color values to a point in 3D space
-            
-            time_start = TIME_NOW;
-            buff_size = sendXYZRGBPointcloud(pts, color, buffer);   // 86ms vs 9.7ms
-            time_end = TIME_NOW;
+                // Grab depth and color frames, and map each point to a color value
+                auto frames = pipe.wait_for_frames();
+                auto depth = frames.get_depth_frame();
+                auto color = frames.get_color_frame();
 
+                // if (timer) {
+                //     grab_frame_end_calculate_start = TIME_NOW;
+                // }
+
+                auto pts = pc.calculate(depth);
+                pc.map_to(color);                       // Maps color values to a point in 3D space
+
+<<<<<<< HEAD
             std::cout << "Frame Time: " << timeMilli(time_end - time_start).count() \
                 << " ms " << "FPS: " << 1000.0 / timeMilli(time_end - time_start).count() \
                 << "\t Buffer size: " << float(buff_size)/1000000 << " MBytes" << std::endl;
             duration_sum += timeMilli(time_end - time_start).count();
             buff_size_sum += buff_size;
+=======
+                // if (timer) {
+                //     calculate_end = TIME_NOW;
+                // }
+>>>>>>> 9fbccb985fd5f8a8869e67ba26bbdc1a0fa6d0f6
 
+                buff_size = sendXYZRGBPointcloud(pts, color, buffer);
+            }
+            else {                                     // Did not receive a correct pull request
+                std::cerr << "Faulty pull request" << std::endl;
+                exit(EXIT_FAILURE);
+            }
         }
-    }
-    
-    pipe.stop();
-    
-    if (send_buffer)
-    {
+
         close(client_sock);
         close(sockfd);
     }
+    else {
+        std::cout << "Reading Frames from File: " << filename << std::endl;
+        
+        rs2::config cfg;
+        rs2::pipeline pipe;
+        rs2::pointcloud pc;
+        
+        cfg.enable_device_from_file(filename);
+        rs2::pipeline_profile selection = pipe.start(cfg);
+
+        rs2::device device = pipe.get_active_profile().get_device();
+        std::cout << "Camera Info: " << device.get_info(RS2_CAMERA_INFO_NAME) << " FW ver:" << device.get_info(RS2_CAMERA_INFO_FIRMWARE_VERSION) << std::endl;
+        if (num_of_threads) std::cout << "OpenMP Threads: " << num_of_threads << std::endl;
+        
+        //auto depth_stream = selection.get_stream(RS2_STREAM_DEPTH).as<rs2::video_stream_profile>();
+        //auto resolution = std::make_pair(depth_stream.width(), depth_stream.height());
+        //auto intr = depth_stream.get_intrinsics();
+
+        // rs2::pipeline pipe;
+        // pipe.start();
+
+        // const auto CAPACITY = 5; // allow max latency of 5 frames
+        // rs2::frame_queue queue(CAPACITY);
+        // std::thread t([&]() {
+        //     while (true)
+        //     {
+        //         rs2::depth_frame frame;
+        //         if (queue.poll_for_frame(&frame))
+        //         {
+        //             frame.get_data();
+        //             // Do processing on the frame
+        //         }
+        //     }
+        // });
+        // t.detach();
+
+        // while (true)
+        // {
+        //     auto frames = pipe.wait_for_frames();
+        //     queue.enqueue(frames.get_depth_frame());
+        // }
+        //get_extrinsics(const rs2::stream_profile& from_stream, const rs2::stream_profile& to_stream)
+
+        int i = 0, last_frame = 0;
+        double duration_sum = 0;
+        
+        rs2::frameset frames;
+
+        if (send_buffer) initSocket(PORT);
+        
+        while (true)
+        {    
+            
+            if (!pipe.poll_for_frames(&frames))
+            {
+                continue;
+            }
+            else
+            {
+
+                if (!send_buffer && last_frame > frames.get_frame_number()) break;
+                if (last_frame == frames.get_frame_number()) continue;
+                
+                //std::cout << "Got Frame # " << last_frame << std::endl;
+                last_frame = frames.get_frame_number();
+                i++;
+
+                //use frames here
+                
+                                                                    // stairs.bag vs sample.bag
+                rs2::video_frame color = frames.get_color_frame();  // 0.003 ms vs 0.001ms
+                rs2::depth_frame depth = frames.get_depth_frame();  // 0.001ms vs 0.001ms
+                rs2::points pts = pc.calculate(depth);              // 27ms vs 27ms            
+                pc.map_to(color);       // 0.01ms vs 0.02ms  // Maps color values to a point in 3D space
+                
+                time_start = TIME_NOW;
+                buff_size = sendXYZRGBPointcloud(pts, color, buffer);   // 86ms vs 9.7ms
+                time_end = TIME_NOW;
+
+                std::cout << "Frame Time: " << timeMilli(time_end - time_start).count() \
+                    << " ms " << "FPS: " << 1000.0 / timeMilli(time_end - time_start).count() \
+                    << "\t Buffer size: " << float(buff_size)/(1<<20) << " MBytes" << std::endl;
+                duration_sum += timeMilli(time_end - time_start).count();
+                buff_size_sum += buff_size;
+
+            }
+        }
+        
+        pipe.stop();
+        
+        if (send_buffer)
+        {
+            close(client_sock);
+            close(sockfd);
+        }
+
+        // Use last Frame to display frame Info
+        rs2::video_frame color = frames.get_color_frame();
+        rs2::depth_frame depth = frames.get_depth_frame();
+        rs2::points pts = pc.calculate(depth);
+
+        std::cout << "\n### Video Frames H x W : " << color.get_height() << " x " << color.get_width() << std::endl;
+        std::cout << "### Depth Frames H x W : " << depth.get_height() << " x " << depth.get_width() << std::endl;
+        std::cout << "### # Points : " << pts.size() << std::endl;
+        
+        std::cout << "\n### Total Frames = " << i << std::endl;
+        std::cout << "### AVG Frame Time: " << duration_sum / i << " ms" << std::endl;
+        std::cout << "### AVG FPS: " << 1000.0 / (duration_sum / i) << std::endl;
+        
+        if (num_of_threads)
+        {
+            std::cout << "### OpenMP Threads : " << num_of_threads   << std::endl;
+        }else
+        {
+            std::cout << "### Running Serialized" << std::endl;
+        }
+
+        if (compress)
+        {
+            std::cout << "\n### Sending Compressed Stream" << std::endl;
+            std::cout << "### AVG Bytes/Frame: " << float(buff_size_sum) / (i*1000000) << " MBytes" << std::endl;
+            std::cout << "### AVG Compression Ratio " << float(buff_size_sum) / ( (pts.size()/100) * 5 * sizeof(short) * i) << " %" << std::endl;
+        }else
+        {
+            std::cout << "\n### AVG Bytes/Frame: " << float(buff_size_sum) / (i*1000000) << " MBytes" << std::endl;
+            std::cout << "### AVG Filter Compress Ratio " << float(buff_size_sum) / ( (pts.size()/100) * 5 * sizeof(short) * i) << " %" << std::endl;
+        }
+    }
 
     free(buffer);
-
-    // Use last Frame to display frame Info
-    rs2::video_frame color = frames.get_color_frame();
-    rs2::depth_frame depth = frames.get_depth_frame();
-    rs2::points pts = pc.calculate(depth);
-
-    std::cout << "\n### Video Frames H x W : " << color.get_height() << " x " << color.get_width() << std::endl;
-    std::cout << "### Depth Frames H x W : " << depth.get_height() << " x " << depth.get_width() << std::endl;
-    std::cout << "### # Points : " << pts.size() << std::endl;
-    
-    std::cout << "\n### Total Frames = " << i << std::endl;
-    std::cout << "### AVG Frame Time: " << duration_sum / i << " ms" << std::endl;
-    std::cout << "### AVG FPS: " << 1000.0 / (duration_sum / i) << std::endl;
-    
-    if (num_of_threads)
-    {
-        std::cout << "### OpenMP Threads : " << num_of_threads   << std::endl;
-    }else
-    {
-        std::cout << "### Running Serialized" << std::endl;
-    }
-
-    if (compress)
-    {
-        std::cout << "\n### Sending Compressed Stream" << std::endl;
-        std::cout << "### AVG Bytes/Frame: " << float(buff_size_sum) / (i*1000000) << " MBytes" << std::endl;
-        std::cout << "### AVG Compression Ratio " << float(buff_size_sum) / ( (pts.size()/100) * 5 * sizeof(short) * i) << " %" << std::endl;
-    }else
-    {
-        std::cout << "\n### AVG Bytes/Frame: " << float(buff_size_sum) / (i*1000000) << " MBytes" << std::endl;
-        std::cout << "### AVG Filter Compress Ratio " << float(buff_size_sum) / ( (pts.size()/100) * 5 * sizeof(short) * i) << " %" << std::endl;
-    }
-
     return 0;
 }
 
