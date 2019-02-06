@@ -1,5 +1,5 @@
-#find_package(Boost REQUIRED COMPONENTS serialization)
-#include_directories(${Boost_INCLUDE_DIRS})
+find_package(Boost REQUIRED COMPONENTS serialization)
+include_directories(${Boost_INCLUDE_DIRS})
 
 find_package(realsense2 REQUIRED)
 find_package(OpenMP REQUIRED)
@@ -42,7 +42,7 @@ target_link_libraries(
     realsense2
     "${OpenMP_CXX_FLAGS}"
 )
-set_target_properties(pcs-client PROPERTIES COMPILE_FLAGS "-mavx -mfma" )
+set_target_properties(pcs-client PROPERTIES COMPILE_FLAGS "-mavx -mfma -pthread" )
 
 install(
     TARGETS

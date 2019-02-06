@@ -6,6 +6,7 @@
 #include <cstring>
 #include <iostream>
 #include <chrono>
+#include <iomanip>
 
 #include <string>
 #include <unistd.h>
@@ -13,15 +14,19 @@
 #include <stdlib.h>
 #include <getopt.h>
 #include <signal.h>
+#include <thread>
+
+#include <mutex>
+#include <queue>
+
+#include <omp.h>
+#include <immintrin.h>
+#include <xmmintrin.h>
 
 #include <sys/socket.h>
 #include <netinet/in.h>
 
 #include <librealsense2/rs.hpp>
-
-#include <omp.h>
-#include <immintrin.h>
-#include <xmmintrin.h>
 
 #define TIME_NOW    std::chrono::high_resolution_clock::now()
 #define BUF_SIZE    5000000
@@ -33,7 +38,16 @@ typedef std::chrono::high_resolution_clock clockTime;
 typedef std::chrono::duration<double, std::milli> timeMilli;
 typedef std::chrono::time_point<clockTime> timestamp;
 
+
+//
+// Variables
+//
 char *filename = "../samples/stairs.bag";
+
+short *buffer;
+int i = 0, last_frame = 0;
+int buff_size = 0, buff_size_sum = 0;
+double duration_sum = 0;
 
 bool display_updates = false;
 bool send_buffer = false;
@@ -58,6 +72,37 @@ __m128 ss_b = _mm_set_ps(0, tf_mat[9], tf_mat[5], tf_mat[1]);
 __m128 ss_c = _mm_set_ps(0, tf_mat[10], tf_mat[6], tf_mat[2]);
 __m128 ss_d = _mm_set_ps(0, tf_mat[11], tf_mat[7], tf_mat[3]);
 
+
+std::mutex callback_mutex;
+std::queue<rs2::frameset> frames_queue;
+
+bool initialized = false;
+int pts_size;
+int w, h, cl_bp, cl_sb, w_min, h_min;
+
+// TODO CLEAN
+float conv_rate, point5f, w_f, h_f, h_min_f, cl_bp_f, cl_sb_f;
+__m128 _conv_rate, _cl_bp_f, _cl_sb_f, _f5, _w, _h, z_lo, z_hi, x_lo, x_hi;
+__m128i _zero, _w_min, _h_min, _cl_bp, _cl_sb;
+
+
+//
+// Function Declarations
+//
+void initSocket(int);
+void sigintHandler(int); 
+void print_usage();
+void parseArgs(int, char**);
+void processFrame(rs2::frameset);
+int PCtoBufferSIMD(rs2::points&, const rs2::video_frame&, short*);
+int PCtoBuffer(rs2::points&, const rs2::video_frame&, short*);
+int sendPC(rs2::points, rs2::video_frame, short*);
+
+
+
+//
+// Functions
+//
 // Creates TCP stream socket and connects to the central computer.
 void initSocket(int port) {
     struct sockaddr_in serv_addr;
@@ -90,8 +135,6 @@ void initSocket(int port) {
 
     std::cout << "Established connection with client_sock: " << client_sock << std::endl;
 }
-
-int sendXYZRGBPointcloud(rs2::points pts, rs2::video_frame color, short * buffer);
 
 // Exit gracefully by closing all open sockets and freeing buffer
 void sigintHandler(int dummy) {
@@ -138,104 +181,79 @@ void parseArgs(int argc, char** argv) {
     std::cout << "\Reading Frames from File: " << filename << std::endl;
 }
 
-int main (int argc, char** argv) {
 
-    // Parse Arguments
+
+// Define frame callback
+// The callback is executed on a sensor thread and can be called simultaneously from multiple sensors
+// Therefore any modification to common memory should be done under lock
+auto callback = [&](const rs2::frame& frame)
+{
+    std::lock_guard<std::mutex> lock(callback_mutex);
+    if (rs2::frameset fs = frame.as<rs2::frameset>())
+    {
+        // With callbacks, all synchronized stream will arrive in a single frameset
+        frames_queue.push(fs);
+    }
+    else
+    {
+        // Stream that bypass synchronization (such as IMU) will produce single frames
+    }
+};
+
+
+int main (int argc, char** argv) try
+{
     parseArgs(argc, argv);
 
     // Set interrupt signal
     signal(SIGINT, sigintHandler);
-    
+
     rs2::config cfg;
     rs2::pipeline pipe;
-    rs2::pointcloud pc;
+    //rs2::pointcloud pc;
     
     cfg.enable_device_from_file(filename);
-    rs2::pipeline_profile selection = pipe.start(cfg);
-
+    //auto stream = cfg.open(pipe);
+    //rs2::pipeline_profile selection = pipe.start(cfg);
+    rs2::pipeline_profile profiles = pipe.start(cfg, callback);
+    //pipe.start(queue);
     rs2::device device = pipe.get_active_profile().get_device();
-    std::cout << "Camera Info: " << device.get_info(RS2_CAMERA_INFO_NAME) << " FW ver:" << device.get_info(RS2_CAMERA_INFO_FIRMWARE_VERSION) << std::endl;
+    
+    std::cout << std::fixed << std::setprecision(3);
+    std::cout << "Camera Info: " << device.get_info(RS2_CAMERA_INFO_NAME);
+    std::cout << " FW ver:" << device.get_info(RS2_CAMERA_INFO_FIRMWARE_VERSION) << std::endl;
     if (num_of_threads) std::cout << "OpenMP Threads: " << num_of_threads << std::endl;
-    
-    //auto depth_stream = selection.get_stream(RS2_STREAM_DEPTH).as<rs2::video_stream_profile>();
-    //auto resolution = std::make_pair(depth_stream.width(), depth_stream.height());
-    //auto intr = depth_stream.get_intrinsics();
 
-    // rs2::pipeline pipe;
-    // pipe.start();
-
-    // const auto CAPACITY = 5; // allow max latency of 5 frames
-    // rs2::frame_queue queue(CAPACITY);
-    // std::thread t([&]() {
-    //     while (true)
-    //     {
-    //         rs2::depth_frame frame;
-    //         if (queue.poll_for_frame(&frame))
-    //         {
-    //             frame.get_data();
-    //             // Do processing on the frame
-    //         }
-    //     }
-    // });
-    // t.detach();
-
-    // while (true)
-    // {
-    //     auto frames = pipe.wait_for_frames();
-    //     queue.enqueue(frames.get_depth_frame());
-    // }
-    //get_extrinsics(const rs2::stream_profile& from_stream, const rs2::stream_profile& to_stream)
-
-    int i = 0, last_frame = 0;
-    int buff_size = 0, buff_size_sum = 0;
-    double duration_sum = 0;
-    short *buffer = (short *)malloc(sizeof(short) * BUF_SIZE);
-    
-    for (int i = 0; i < num_of_threads; i++){
-        thread_buffers[i] = (short *)malloc(sizeof(short) * (BUF_SIZE/num_of_threads + 100));
-    }
-
-    rs2::frameset frames;
+    buffer = (short *)malloc(sizeof(short) * BUF_SIZE);
 
     if (send_buffer) initSocket(PORT);
-    
+
+    std::cout << "RealSense callback sample" << std::endl << std::endl;
     while (true)
-    {    
-        
-        if (!pipe.poll_for_frames(&frames))
+    {
+        if (!frames_queue.empty())
         {
-            continue;
+            rs2::frameset fs = frames_queue.front();
+            //std::cout << frames_queue.size() << "  " << std::endl;
+            time_start = TIME_NOW;
+            processFrame(fs);
+            time_end = TIME_NOW;
+            frames_queue.pop();
+    
+            std::cout << "Frame #: " << fs.get_frame_number();
+            std::cout << " Frame Time: " << timeMilli(time_end - time_start).count();
+            std::cout << " ms " << "FPS: " << 1000.0 / timeMilli(time_end - time_start).count();
+            std::cout << " Buffer size: " << float(buff_size)/1000000 << " MBytes";
+            std::cout << " Queue size: " << frames_queue.size() << std::endl;
         }
         else
         {
-
-            if (!send_buffer && last_frame > frames.get_frame_number()) break;
-            if (last_frame == frames.get_frame_number()) continue;
-            
-            //std::cout << "Got Frame # " << last_frame << std::endl;
-            last_frame = frames.get_frame_number();
-            i++;
-
-            //use frames here
-            
-                                                                // stairs.bag vs sample.bag
-            rs2::video_frame color = frames.get_color_frame();  // 0.003 ms vs 0.001ms
-            rs2::depth_frame depth = frames.get_depth_frame();  // 0.001ms vs 0.001ms
-            rs2::points pts = pc.calculate(depth);              // 27ms vs 27ms            
-            pc.map_to(color);       // 0.01ms vs 0.02ms  // Maps color values to a point in 3D space
-            
-            time_start = TIME_NOW;
-            buff_size = sendXYZRGBPointcloud(pts, color, buffer);   // 86ms vs 9.7ms
-            time_end = TIME_NOW;
-
-            std::cout << "Frame Time: " << timeMilli(time_end - time_start).count() \
-                << " ms " << "FPS: " << 1000.0 / timeMilli(time_end - time_start).count() \
-                << "\t Buffer size: " << float(buff_size)/1000000 << " MBytes" << std::endl;
-            duration_sum += timeMilli(time_end - time_start).count();
-            buff_size_sum += buff_size;
-
+            std::this_thread::sleep_for(std::chrono::nanoseconds(1000));
         }
     }
+
+    return EXIT_SUCCESS;
+
     
     pipe.stop();
     
@@ -248,55 +266,73 @@ int main (int argc, char** argv) {
     free(buffer);
 
     // Use last Frame to display frame Info
-    rs2::video_frame color = frames.get_color_frame();
-    rs2::depth_frame depth = frames.get_depth_frame();
-    rs2::points pts = pc.calculate(depth);
+    // rs2::video_frame color = frames.get_color_frame();
+    // rs2::depth_frame depth = frames.get_depth_frame();
+    // rs2::points pts = pc.calculate(depth);
 
-    std::cout << "\n### Video Frames H x W : " << color.get_height() << " x " << color.get_width() << std::endl;
-    std::cout << "### Depth Frames H x W : " << depth.get_height() << " x " << depth.get_width() << std::endl;
-    std::cout << "### # Points : " << pts.size() << std::endl;
+    // std::cout << "\n### Video Frames H x W : " << color.get_height() << " x " << color.get_width() << std::endl;
+    // std::cout << "### Depth Frames H x W : " << depth.get_height() << " x " << depth.get_width() << std::endl;
+    // std::cout << "### # Points : " << pts.size() << std::endl;
     
-    std::cout << "\n### Total Frames = " << i << std::endl;
-    std::cout << "### AVG Frame Time: " << duration_sum / i << " ms" << std::endl;
-    std::cout << "### AVG FPS: " << 1000.0 / (duration_sum / i) << std::endl;
+    // std::cout << "\n### Total Frames = " << i << std::endl;
+    // std::cout << "### AVG Frame Time: " << duration_sum / i << " ms" << std::endl;
+    // std::cout << "### AVG FPS: " << 1000.0 / (duration_sum / i) << std::endl;
     
-    if (num_of_threads)
-    {
-        std::cout << "### OpenMP Threads : " << num_of_threads   << std::endl;
-    }else
-    {
-        std::cout << "### Running Serialized" << std::endl;
-    }
+    // if (num_of_threads)
+    // {
+    //     std::cout << "### OpenMP Threads : " << num_of_threads   << std::endl;
+    // }else
+    // {
+    //     std::cout << "### Running Serialized" << std::endl;
+    // }
 
-    if (compress)
-    {
-        std::cout << "\n### Sending Compressed Stream" << std::endl;
-        std::cout << "### AVG Bytes/Frame: " << float(buff_size_sum) / (i*1000000) << " MBytes" << std::endl;
-        std::cout << "### AVG Compression Ratio " << float(buff_size_sum) / ( (pts.size()/100) * 5 * sizeof(short) * i) << " %" << std::endl;
-    }else
-    {
-        std::cout << "\n### AVG Bytes/Frame: " << float(buff_size_sum) / (i*1000000) << " MBytes" << std::endl;
-        std::cout << "### AVG Filter Compress Ratio " << float(buff_size_sum) / ( (pts.size()/100) * 5 * sizeof(short) * i) << " %" << std::endl;
-    }
+    // if (compress)
+    // {
+    //     std::cout << "\n### Sending Compressed Stream" << std::endl;
+    //     std::cout << "### AVG Bytes/Frame: " << float(buff_size_sum) / (i*1000000) << " MBytes" << std::endl;
+    //     std::cout << "### AVG Compression Ratio " << float(buff_size_sum) / ( (pts.size()/100) * 5 * sizeof(short) * i) << " %" << std::endl;
+    // }else
+    // {
+    //     std::cout << "\n### AVG Bytes/Frame: " << float(buff_size_sum) / (i*1000000) << " MBytes" << std::endl;
+    //     std::cout << "### AVG Filter Compress Ratio " << float(buff_size_sum) / ( (pts.size()/100) * 5 * sizeof(short) * i) << " %" << std::endl;
+    // }
 
     return 0;
 }
-
-bool initialized = false;
-int pts_size;
-int w, h, cl_bp, cl_sb, w_min, h_min;
-
-// TODO CLEAN
-float conv_rate, point5f, w_f, h_f, h_min_f, cl_bp_f, cl_sb_f;
-
-// Float
-__m128 _conv_rate, _cl_bp_f, _cl_sb_f, _f5, _w, _h, z_lo, z_hi, x_lo, x_hi;
-
-// integ
-__m128i _zero, _w_min, _h_min, _cl_bp, _cl_sb;
+catch (const rs2::error & e)
+{
+    std::cerr << "RealSense error calling " << e.get_failed_function() << "(" << e.get_failed_args() << "):\n    " << e.what() << std::endl;
+    return EXIT_FAILURE;
+}
+catch (const std::exception& e)
+{
+    std::cerr << e.what() << std::endl;
+    return EXIT_FAILURE;
+}
 
 
-int copyPointCloudXYZRGBToBufferSIMD(rs2::points& pts, const rs2::video_frame& color, short * pc_buffer)
+void processFrame(rs2::frameset f){
+
+    rs2::video_frame color = f.get_color_frame();  // 0.003 ms vs 0.001ms
+    rs2::depth_frame depth = f.get_depth_frame();  // 0.001ms vs 0.001ms
+    rs2::pointcloud pc;
+    rs2::points pts = pc.calculate(depth);              // 27ms vs 27ms
+
+    pc.map_to(color);       // 0.01ms vs 0.02ms  // Maps color values to a point in 3D space
+    //time_start = TIME_NOW;
+    buff_size = sendPC(pts, color, buffer);   // 86ms vs 9.7ms
+    //time_end = TIME_NOW;
+
+    // std::cout << "Frame #: " << f.get_frame_number();
+    // std::cout << " Frame Time: " << timeMilli(time_end - time_start).count();
+    // std::cout << " ms " << "FPS: " << 1000.0 / timeMilli(time_end - time_start).count();
+    // std::cout << "\t Buffer size: " << float(buff_size)/1000000 << " MBytes" << std::endl;
+
+    buff_size_sum += buff_size;
+}
+
+
+int PCtoBufferSIMD(rs2::points& pts, const rs2::video_frame& color, short * pc_buffer)
 {
     const auto vert = pts.get_vertices();
     const rs2::texture_coordinate* tcrd = pts.get_texture_coordinates();
@@ -553,7 +589,7 @@ int copyPointCloudXYZRGBToBufferSIMD(rs2::points& pts, const rs2::video_frame& c
 
 // Converts the XYZ values into shorts for less memory overhead,
 // and puts the XYZRGB values of each point into the buffer.
-int copyPointCloudXYZRGBToBuffer(rs2::points& pts, const rs2::video_frame& color, short * pc_buffer) {
+int PCtoBuffer(rs2::points& pts, const rs2::video_frame& color, short * pc_buffer) {
 
     const auto vertices = pts.get_vertices();
     const rs2::texture_coordinate* tex_coords = pts.get_texture_coordinates();
@@ -568,8 +604,6 @@ int copyPointCloudXYZRGBToBuffer(rs2::points& pts, const rs2::video_frame& color
     const int h_min = h - 1;
     
     // TODO Optimize return size
-
-    // use 4 threads
     #pragma omp parallel for schedule(static, 10000) num_threads(num_of_threads)
     for (int i = 0; i < pts_size; i++) {
 
@@ -602,7 +636,7 @@ int copyPointCloudXYZRGBToBuffer(rs2::points& pts, const rs2::video_frame& color
 
 }
 
-int sendXYZRGBPointcloud(rs2::points pts, rs2::video_frame color, short * buffer) {
+int sendPC(rs2::points pts, rs2::video_frame color, short * buffer) {
     int size;
     
     // Clean Buffer
@@ -612,7 +646,7 @@ int sendXYZRGBPointcloud(rs2::points pts, rs2::video_frame color, short * buffer
 
     //TODO Try Zstandard v1.3.7 vs Snappy
 
-    //TODO Investigate https://github.com/IntelRealSense/librealsense/wiki/API-Changes#from-2161-to-2162
+    // TODO Investigate https://github.com/IntelRealSense/librealsense/wiki/API-Changes#from-2161-to-2162
     // rs2_project_color_pixel_to_depth_pixel - map pixel in the color image to pixel in depth image
     
     // TODO rs2_create_hole_filling_filter_block - Hole-Filling filter supports three modes of operation:
@@ -623,10 +657,10 @@ int sendXYZRGBPointcloud(rs2::points pts, rs2::video_frame color, short * buffer
 
     if (use_simd)
     {
-        size = copyPointCloudXYZRGBToBufferSIMD(pts, color, &buffer[0] + sizeof(short));
+        size = PCtoBufferSIMD(pts, color, &buffer[0] + sizeof(short));
     }else
     {
-        size = copyPointCloudXYZRGBToBuffer(pts, color, &buffer[0] + sizeof(short));
+        size = PCtoBuffer(pts, color, &buffer[0] + sizeof(short));
     }
     
     // Size in bytes of the payload
