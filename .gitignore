@@ -3,3 +3,4 @@ pointclouds/
 snappy
 
 \.DS_Store
+.vscode/settings.json
