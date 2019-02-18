@@ -1,5 +1,5 @@
-find_package(Boost REQUIRED COMPONENTS serialization)
-include_directories(${Boost_INCLUDE_DIRS})
+#find_package(Boost REQUIRED COMPONENTS serialization)
+#include_directories(${Boost_INCLUDE_DIRS})
 
 find_package(realsense2 REQUIRED)
 find_package(OpenMP REQUIRED)
@@ -36,20 +36,20 @@ target_link_libraries(
 )
 set_target_properties(pcs-camera-optimized PROPERTIES COMPILE_FLAGS "-mavx -mfma" )
 
-add_executable(pcs-client pcs-client.cpp)
-target_link_libraries(
-    pcs-client
-    realsense2
-    "${OpenMP_CXX_FLAGS}"
-)
-set_target_properties(pcs-client PROPERTIES COMPILE_FLAGS "-mavx -mfma -pthread" )
+#add_executable(pcs-client pcs-client.cpp)
+#target_link_libraries(
+#    pcs-client
+#    realsense2
+#    "${OpenMP_CXX_FLAGS}"
+#)
+#set_target_properties(pcs-client PROPERTIES COMPILE_FLAGS "-mavx -mfma -pthread" )
 
 install(
     TARGETS
     pcs-camera-grab-frames
     pcs-camera-test-samples
     pcs-camera-optimized
-    pcs-client
+#    pcs-client
     
     RUNTIME DESTINATION
     ${CMAKE_INSTALL_PREFIX}/bin
