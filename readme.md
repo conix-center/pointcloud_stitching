@@ -15,6 +15,10 @@ Different steps of installation are required for installing the realsense camera
 `mkdir build && cd build`<br />
 `cmake ..`<br />
 `make && sudo make install`
+- Install OpenCV
+`sudo apt install libopencv-dev`
+- Install OPENGL
+`sudo apt-get install libglfw3-dev libgl1-mesa-dev libglu1-mesa-dev`
 
 #### Central computing system
 - Follow the instructions to download and install PCL libraries from their [website](http://www.pointclouds.org/documentation/tutorials/compiling_pcl_posix.php).
