@@ -1,6 +1,7 @@
 build/
 pointclouds/
-snappy
+snappy/
+librealsense/
 
 \.DS_Store
 .vscode/settings.json
